@@ -306,12 +306,57 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
 
         return {"skills": _ls()}
 
+    @app.get("/api/skills/categories")
+    async def list_skill_categories():
+        from erebus.skills.registry import list_skill_categories
+
+        return {"categories": list_skill_categories()}
+
+    @app.get("/api/skills/category/{category}")
+    async def list_skills_by_category(category: str):
+        from erebus.skills.registry import list_skills as _ls
+
+        skills = [s for s in _ls() if s.get("category") == category]
+        return {"category": category, "skills": skills}
+
     @app.post("/api/skills")
     async def create_skill(req: SkillCreateRequest):
         from erebus.skills.registry import save_user_skill
 
         path = save_user_skill(req.name, req.description, req.code)
         return {"saved": True, "path": str(path)}
+
+    # -- MCP Servers ---------------------------------------------------------
+
+    @app.get("/api/mcp/servers")
+    async def list_mcp_servers():
+        from erebus.agent_config import get_config_section, load_agent_config
+        from erebus.mcp import parse_mcp_configs
+
+        config = load_agent_config()
+        mcp_section = get_config_section(config, "mcp")
+        configs = parse_mcp_configs(mcp_section)
+        return {
+            "servers": [
+                {
+                    "name": c.name,
+                    "transport": c.transport,
+                    "command": c.command,
+                    "url": c.url,
+                    "enabled": c.enabled,
+                }
+                for c in configs
+            ]
+        }
+
+    # -- Agent Config --------------------------------------------------------
+
+    @app.get("/api/config")
+    async def get_agent_config():
+        from erebus.agent_config import load_agent_config
+
+        config = load_agent_config()
+        return {"config": config}
 
     # -- Schedules -----------------------------------------------------------
 

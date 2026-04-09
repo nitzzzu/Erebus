@@ -1,6 +1,6 @@
 # ⚡ Erebus
 
-**Feature-packed AI agent** combining the [Agno](https://docs.agno.com) framework with [Hermes Agent](https://github.com/NousResearch/hermes-agent)–style features: agentic memory, autonomous skills, cron scheduling, soul/personality, multi-model support, and multi-channel messaging.
+**The ultimate AI agent** — combining the [Agno](https://docs.agno.com) framework with [Hermes Agent](https://github.com/NousResearch/hermes-agent)–style skills, MCP integration, agentic memory, cron scheduling, soul/personality, multi-model support, and multi-channel messaging.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Agno](https://img.shields.io/badge/Agno-v2.5.15-brightgreen.svg)](https://docs.agno.com)
@@ -12,10 +12,13 @@
 
 | Feature | Description |
 |---------|-------------|
+| **40+ Skills** | Hermes-style SKILL.md skills organized in 17 categories — research, coding, creative, productivity, DevOps, and more |
+| **MCP Integration** | Connect to any Model Context Protocol server (stdio, SSE, HTTP) via config file |
 | **Multi-Model** | Switch between any LLM provider with `provider:model_id` syntax — OpenAI, Anthropic, Google, OpenRouter, Ollama, and more |
+| **TOML/JSON Config** | Agent configuration via `erebus.toml` or `erebus.json` — models, skills, MCP servers, and more |
+| **Recursive Skill Loader** | Hermes-style nested directory skill discovery from folders and subfolders |
 | **Agentic Memory** | Agent-curated persistent memory per user via Agno MemoryManager + SQLite |
 | **Session Storage** | Conversation history persisted across sessions |
-| **Skills System** | Built-in skills + user-created skills stored as JSON, auto-discovered at startup |
 | **Cron Scheduler** | Natural-language–described cron jobs with timezone support and delivery to any channel |
 | **Soul / Personality** | SOUL.md–style personality definitions that shape agent behavior |
 | **Telegram Bot** | Full Telegram integration via Agno's built-in Telegram interface |
@@ -23,6 +26,32 @@
 | **Web UI** | Next.js + Shadcn dashboard with chat, memory, skills, schedules, soul, channels, and settings |
 | **Rich CLI** | Interactive terminal with panels, tables, spinners, markdown rendering, and syntax highlighting |
 | **REST API** | FastAPI backend powering both the CLI and web UI |
+| **External Skills** | Load custom skills from any directory — share skills across projects |
+| **Progressive Disclosure** | Skills use lazy loading — agent sees summaries, loads full instructions on demand |
+
+---
+
+## Skills Library (40+ Skills in 17 Categories)
+
+| Category | Skills | Description |
+|----------|--------|-------------|
+| **MCP** | native-mcp, mcporter | Model Context Protocol server integration |
+| **Research** | arxiv, blogwatcher, llm-wiki, polymarket | Academic papers, RSS feeds, knowledge bases, prediction markets |
+| **Creative** | ascii-art, excalidraw, manim-video, p5js, popular-web-designs, songwriting | ASCII art, diagrams, animations, generative art, design systems, music |
+| **Productivity** | google-workspace, linear, nano-pdf, notion, ocr-and-documents, powerpoint | Gmail/Calendar/Drive, Linear issues, PDF editing, Notion, OCR, slides |
+| **Software Dev** | plan, code-review, subagent-development, systematic-debugging, tdd, writing-plans | Planning, review, TDD, debugging, implementation workflows |
+| **GitHub** | codebase-inspection, github-auth, github-code-review, github-issues, github-pr-workflow, github-repo-management | Full GitHub workflow automation |
+| **Data Science** | jupyter-live-kernel | Interactive Jupyter kernels for data exploration |
+| **DevOps** | webhook-subscriptions | Event-driven automation with webhooks |
+| **Social Media** | xitter | X (Twitter) posting, search, and management |
+| **Email** | himalaya | Full email client via Himalaya CLI |
+| **Media** | gif-search, youtube-content | GIF search, YouTube transcript extraction |
+| **Note-Taking** | obsidian | Obsidian vault management |
+| **Smart Home** | openhue | Philips Hue light control |
+| **Autonomous Agents** | claude-code, codex, opencode | Delegate to AI coding agents |
+| **MLOps** | huggingface-hub | Hugging Face models and datasets |
+| **Leisure** | find-nearby | Local place discovery via OpenStreetMap |
+| **QA Testing** | dogfood | Systematic web app QA testing |
 
 ---
 
@@ -30,30 +59,31 @@
 
 ```
 erebus/
-├── core/           # Agent factory (Agno Agent + multi-model)
+├── core/           # Agent factory (Agno Agent + multi-model + MCP)
 ├── memory/         # MemoryManager facade
-├── skills/         # Skill registry + built-in skills
-│   └── builtins/   # Shipped skills (web search, etc.)
+├── skills/         # Hermes-style skill system
+│   ├── loader.py   # Recursive skill discovery from nested dirs
+│   ├── registry.py # Skill metadata registry + categories
+│   └── builtins/   # 40+ skills in 17 categories
+│       ├── mcp/            # MCP integration skills
+│       ├── research/       # Academic research skills
+│       ├── creative/       # Creative content skills
+│       ├── productivity/   # Productivity tool skills
+│       ├── software-development/  # Dev workflow skills
+│       ├── github/         # GitHub workflow skills
+│       └── ...             # 10 more categories
 ├── scheduler/      # Cron scheduler (croniter + JSON persistence)
 ├── soul/           # SOUL.md loader and personality management
 ├── channels/       # Telegram + Microsoft Teams integrations
 ├── cli/            # Rich-powered interactive terminal
-│   ├── main.py     # Entry point (chat, serve, telegram, teams)
-│   └── console.py  # Rich panels, tables, spinners, markdown
 ├── api/            # FastAPI REST API server
-│   └── server.py   # All endpoints (chat, memory, skills, etc.)
+├── mcp.py          # MCP server config and connection management
+├── agent_config.py # TOML/JSON config file loader
 └── config.py       # pydantic-settings configuration
 
 web/                # Next.js + Shadcn web UI
 ├── src/
 │   ├── app/        # App Router pages
-│   │   ├── chat/       # Chat interface
-│   │   ├── memory/     # Memory management
-│   │   ├── skills/     # Skills management
-│   │   ├── schedules/  # Cron schedule management
-│   │   ├── soul/       # Personality editor
-│   │   ├── channels/   # Channel status
-│   │   └── settings/   # Configuration
 │   ├── components/ # Shadcn UI components + sidebar
 │   ├── hooks/      # Custom React hooks
 │   └── lib/        # API client + utilities
@@ -107,7 +137,35 @@ EREBUS_TEAMS_APP_ID=...
 EREBUS_TEAMS_APP_PASSWORD=...
 ```
 
-### 3. Start Chatting (CLI)
+### 3. Agent Config File (Optional)
+
+Create `erebus.toml` for advanced configuration:
+
+```toml
+[agent]
+name = "Erebus"
+# default_model = "openai:gpt-4o"
+
+[skills]
+# extra_dirs = ["~/my-skills"]
+# disabled = ["red-teaming"]
+
+# Add MCP servers
+[[mcp.servers]]
+name = "filesystem"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/home"]
+
+[[mcp.servers]]
+name = "brave-search"
+url = "https://mcp.brave.com/sse"
+transport = "sse"
+env = { BRAVE_API_KEY = "your-key" }
+```
+
+See `erebus.toml.example` for all options.
+
+### 4. Start Chatting (CLI)
 
 ```bash
 erebus chat
@@ -125,7 +183,7 @@ Available CLI commands:
 | `/new` | Start a new session |
 | `/quit` | Exit |
 
-### 4. Start the API Server
+### 5. Start the API Server
 
 ```bash
 erebus serve
@@ -133,7 +191,7 @@ erebus serve
 
 The REST API starts on `http://localhost:8741`.
 
-### 5. Start the Web UI
+### 6. Start the Web UI
 
 ```bash
 cd web
@@ -143,13 +201,13 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) — the dashboard connects to the API at `localhost:8741`.
 
-### 6. Start the Telegram Bot
+### 7. Start the Telegram Bot
 
 ```bash
 erebus telegram
 ```
 
-### 7. Start the Teams Bot
+### 8. Start the Teams Bot
 
 ```bash
 erebus teams
@@ -176,21 +234,113 @@ Supported providers: OpenAI, Anthropic, Google, Groq, Ollama, OpenRouter, Togeth
 
 ## Skills System
 
-Skills are the agent's reusable capabilities. Built-in skills ship with Erebus, and you can create your own:
+### Hermes-Style Organization
 
-**Built-in skills** live in `erebus/skills/builtins/` — each is a Python module exposing `SKILL_META` and a `tools()` function.
+Skills are organized in nested category directories, just like Hermes Agent:
 
-**User skills** are JSON files in `~/.erebus/skills/`:
-
-```json
-{
-  "name": "weather_lookup",
-  "description": "Look up current weather for any city",
-  "code": "..."
-}
+```
+erebus/skills/builtins/
+├── mcp/
+│   ├── DESCRIPTION.md          # Category description
+│   ├── native-mcp/
+│   │   └── SKILL.md            # Skill instructions
+│   └── mcporter/
+│       └── SKILL.md
+├── research/
+│   ├── arxiv/SKILL.md
+│   ├── blogwatcher/SKILL.md
+│   └── ...
+└── software-development/
+    ├── plan/SKILL.md
+    ├── test-driven-development/SKILL.md
+    └── ...
 ```
 
-Create skills via the REST API or Web UI.
+### Progressive Disclosure
+
+1. **Browse**: Agent sees skill names and descriptions in its system prompt
+2. **Load**: When a task matches a skill, the agent loads full instructions
+3. **Reference**: Agent accesses detailed documentation as needed
+4. **Execute**: Agent can run scripts from the skill
+
+### Creating Custom Skills
+
+Create a new skill in `~/.erebus/skills/` or any external directory:
+
+```
+my-skill/
+├── SKILL.md           # Required: YAML frontmatter + instructions
+├── scripts/           # Optional: executable scripts
+│   └── helper.py
+└── references/        # Optional: reference documentation
+    └── guide.md
+```
+
+SKILL.md format:
+
+```markdown
+---
+name: my-skill
+description: Short description of what this skill does
+metadata:
+  tags: ["category", "keywords"]
+---
+
+# My Skill
+
+Instructions for the agent on when and how to use this skill...
+```
+
+### Loading External Skills
+
+Add external skill directories via config:
+
+```toml
+[skills]
+extra_dirs = ["~/my-skills", "/shared/team-skills"]
+```
+
+---
+
+## MCP (Model Context Protocol) Integration
+
+Connect to any MCP-compatible server for extended tool access:
+
+```toml
+# In erebus.toml
+[[mcp.servers]]
+name = "filesystem"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/home"]
+
+[[mcp.servers]]
+name = "database"
+url = "https://db-mcp.example.com/sse"
+transport = "sse"
+env = { DB_CONNECTION = "postgresql://..." }
+```
+
+Supported transports:
+- **stdio**: Local servers launched as child processes
+- **SSE**: Remote servers with Server-Sent Events
+- **streamable-http**: Remote servers with HTTP streaming
+
+---
+
+## Configuration
+
+Erebus supports three layers of configuration:
+
+| Layer | Source | Priority |
+|-------|--------|----------|
+| **Environment** | `.env` file + OS env vars | Base |
+| **Config File** | `erebus.toml` or `erebus.json` | Override |
+| **CLI** | Command-line flags | Highest |
+
+Config file search order:
+1. `EREBUS_CONFIG` environment variable
+2. `./erebus.toml` or `./erebus.json` (current directory)
+3. `~/.erebus/erebus.toml` or `~/.erebus/erebus.json`
 
 ---
 
@@ -235,27 +385,21 @@ Edit via the Web UI's Soul page or through the API.
 
 ---
 
-## Rich CLI Output
-
-The terminal interface uses the [Rich](https://rich.readthedocs.io) library for:
-
-- **Panels** — agent responses wrapped in styled borders
-- **Tables** — skills, memories, schedules displayed as formatted tables
-- **Spinners** — "Thinking…" status indicator while waiting for the agent
-- **Markdown** — rendered markdown in the terminal
-- **Syntax highlighting** — code blocks with syntax coloring
-
----
-
 ## API Reference
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/chat` | POST | Send a message to the agent |
+| `/api/chat/start` | POST | Start a streaming chat session |
+| `/api/chat/stream` | GET | SSE endpoint for streaming responses |
 | `/api/memory/{user_id}` | GET | List memories for a user |
 | `/api/memory/{memory_id}` | DELETE | Delete a memory |
 | `/api/skills` | GET | List all skills |
+| `/api/skills/categories` | GET | List skill categories |
+| `/api/skills/category/{name}` | GET | List skills in a category |
 | `/api/skills` | POST | Create a new skill |
+| `/api/mcp/servers` | GET | List configured MCP servers |
+| `/api/config` | GET | Get agent configuration |
 | `/api/schedules` | GET | List all schedules |
 | `/api/schedules` | POST | Create a schedule |
 | `/api/schedules/{id}` | PUT | Update a schedule |

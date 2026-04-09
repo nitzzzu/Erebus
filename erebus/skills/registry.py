@@ -1,13 +1,20 @@
-"""Skill registry — discovers and loads skill modules.
+"""Skill registry — discovers and loads skill modules and SKILL.md skills.
 
-Skills are Python modules in the ``builtins`` sub-package or user-created
-files under ``~/.erebus/skills/``.  Each module exposes a ``tools()``
-function that returns a list of Agno ``Toolkit`` instances.
+Skills are organized in a hermes-style nested directory tree:
+    builtins/
+    ├── category/
+    │   ├── DESCRIPTION.md
+    │   └── skill-name/
+    │       └── SKILL.md
 
-SKILL.md-format skills (Anthropic Agent Skills spec) are loaded by the
-Agno ``Skills`` / ``LocalSkills`` machinery in ``erebus.core.agent``.
-This registry handles Python-module skills for backward compatibility and
-exposes metadata for all discovered skills (both formats).
+The registry supports:
+  - Python module skills (``builtins`` sub-package)
+  - SKILL.md-format skills in nested category/skill directories
+  - User-created skill JSON descriptors in ``~/.erebus/skills/``
+  - External skill directories via config
+
+Uses ``erebus.skills.loader`` for recursive directory walking and
+metadata extraction.
 """
 
 from __future__ import annotations
@@ -19,9 +26,13 @@ from pathlib import Path
 from typing import Any
 
 from erebus.config import get_settings
+from erebus.skills.loader import discover_categories, discover_skills
 
 # In-memory registry of skill metadata
 _SKILL_META: list[dict[str, Any]] = []
+
+# Path to built-in skills directory
+_BUILTINS_DIR = Path(__file__).parent / "builtins"
 
 
 def _discover_builtin_skills() -> list[dict[str, Any]]:
@@ -39,31 +50,22 @@ def _discover_builtin_skills() -> list[dict[str, Any]]:
 
 
 def _discover_builtin_skill_md() -> list[dict[str, Any]]:
-    """Discover SKILL.md-format skills in the builtins directory."""
-    builtins_dir = Path(__file__).parent / "builtins"
-    skills: list[dict[str, Any]] = []
-    for skill_dir in sorted(builtins_dir.iterdir()):
-        skill_md = skill_dir / "SKILL.md"
-        if skill_dir.is_dir() and skill_md.is_file():
-            name, description = _parse_skill_md_frontmatter(skill_md)
-            skills.append(
-                {
-                    "name": name or skill_dir.name,
-                    "description": description or "",
-                    "source": "builtin-skill-md",
-                    "path": str(skill_md),
-                }
-            )
+    """Discover SKILL.md-format skills recursively in the builtins directory."""
+    skills = discover_skills(_BUILTINS_DIR, recursive=True, filter_platform=True)
+    for s in skills:
+        s["source"] = "builtin-skill-md"
     return skills
 
 
 def _discover_user_skills() -> list[dict[str, Any]]:
-    """Discover user-created skill JSON descriptors in ~/.erebus/skills/."""
+    """Discover user-created skills in ~/.erebus/skills/."""
     settings = get_settings()
     skills_dir = settings.data_dir / "skills"
     skills: list[dict[str, Any]] = []
     if not skills_dir.exists():
         return skills
+
+    # JSON descriptor skills
     for path in sorted(skills_dir.glob("*.json")):
         try:
             meta = json.loads(path.read_text())
@@ -72,42 +74,36 @@ def _discover_user_skills() -> list[dict[str, Any]]:
             skills.append(meta)
         except Exception:
             continue
-    # Also discover SKILL.md format skills in subdirectories
-    for skill_dir in sorted(skills_dir.iterdir()):
-        skill_md = skill_dir / "SKILL.md"
-        if skill_dir.is_dir() and skill_md.is_file():
-            name, description = _parse_skill_md_frontmatter(skill_md)
-            skills.append(
-                {
-                    "name": name or skill_dir.name,
-                    "description": description or "",
-                    "source": "user-skill-md",
-                    "path": str(skill_md),
-                }
-            )
+
+    # SKILL.md format skills (recursive)
+    md_skills = discover_skills(skills_dir, recursive=True, filter_platform=True)
+    for s in md_skills:
+        s["source"] = "user-skill-md"
+    skills.extend(md_skills)
+
     return skills
 
 
-def _parse_skill_md_frontmatter(skill_md: Path) -> tuple[str, str]:
-    """Parse YAML frontmatter from a SKILL.md file and return (name, description)."""
-    try:
-        text = skill_md.read_text(encoding="utf-8")
-        if text.startswith("---"):
-            end = text.find("---", 3)
-            if end == -1:
-                return "", ""
-            frontmatter = text[3:end].strip()
-            name = ""
-            description = ""
-            for line in frontmatter.splitlines():
-                if line.startswith("name:"):
-                    name = line.split(":", 1)[1].strip()
-                elif line.startswith("description:"):
-                    description = line.split(":", 1)[1].strip()
-            return name, description
-    except Exception:
-        pass
-    return "", ""
+def _discover_external_skills() -> list[dict[str, Any]]:
+    """Discover skills from external directories configured via config file."""
+    from erebus.agent_config import get_config_section, load_agent_config
+
+    config = load_agent_config()
+    skills_config = get_config_section(config, "skills")
+    extra_dirs = skills_config.get("extra_dirs", [])
+    disabled = set(skills_config.get("disabled", []))
+
+    skills: list[dict[str, Any]] = []
+    for dir_path in extra_dirs:
+        d = Path(dir_path).expanduser()
+        if d.is_dir():
+            found = discover_skills(d, recursive=True, filter_platform=True)
+            for s in found:
+                if s["name"] not in disabled:
+                    s["source"] = "external"
+                    skills.append(s)
+
+    return skills
 
 
 def refresh_registry() -> list[dict[str, Any]]:
@@ -117,6 +113,7 @@ def refresh_registry() -> list[dict[str, Any]]:
         _discover_builtin_skills()
         + _discover_builtin_skill_md()
         + _discover_user_skills()
+        + _discover_external_skills()
     )
     return _SKILL_META
 
@@ -126,6 +123,23 @@ def list_skills() -> list[dict[str, Any]]:
     if not _SKILL_META:
         refresh_registry()
     return list(_SKILL_META)
+
+
+def list_skill_categories() -> list[dict[str, str]]:
+    """Return the list of skill categories from the builtins directory."""
+    categories = discover_categories(_BUILTINS_DIR)
+
+    # Also check user skills directory
+    settings = get_settings()
+    user_skills = settings.data_dir / "skills"
+    if user_skills.is_dir():
+        user_cats = discover_categories(user_skills)
+        existing_names = {c["name"] for c in categories}
+        for c in user_cats:
+            if c["name"] not in existing_names:
+                categories.append(c)
+
+    return categories
 
 
 def get_all_skill_tools():
