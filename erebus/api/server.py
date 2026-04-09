@@ -118,12 +118,17 @@ class SettingsUpdateRequest(BaseModel):
 # Active streams: stream_id -> asyncio.Queue
 _streams: dict[str, asyncio.Queue] = {}
 
+# Truncation limits
+_MAX_TITLE_LEN = 60
+_MAX_TOOL_ARGS_LEN = 200
+_MAX_TOOL_RESULT_LEN = 500
+
 
 def _generate_title(message: str) -> str:
     """Generate a short session title from the first user message."""
     title = message.strip().replace("\n", " ")
-    if len(title) > 60:
-        title = title[:57] + "..."
+    if len(title) > _MAX_TITLE_LEN:
+        title = title[: _MAX_TITLE_LEN - 3] + "..."
     return title
 
 
@@ -479,14 +484,14 @@ def _run_agent_streaming(
             if chunk.event == RunEvent.tool_call_started:
                 tool_info = {
                     "name": chunk.tool.tool_name if chunk.tool else "unknown",
-                    "args": str(chunk.tool.tool_args)[:200] if chunk.tool else "",
+                    "args": str(chunk.tool.tool_args)[:_MAX_TOOL_ARGS_LEN] if chunk.tool else "",
                 }
                 _put("tool_start", tool_info)
 
             elif chunk.event == RunEvent.tool_call_completed:
                 result_str = ""
                 if chunk.tool and chunk.tool.result is not None:
-                    result_str = str(chunk.tool.result)[:500]
+                    result_str = str(chunk.tool.result)[:_MAX_TOOL_RESULT_LEN]
                 tool_info = {
                     "name": chunk.tool.tool_name if chunk.tool else "unknown",
                     "result": result_str,
