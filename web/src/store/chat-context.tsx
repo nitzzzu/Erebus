@@ -16,7 +16,6 @@ import {
   connectChatStream,
   listSessions,
   getSession,
-  createSession,
   deleteSessionApi,
   renameSession,
 } from "@/lib/api-client";
@@ -298,21 +297,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "ADD_USER_MESSAGE", content: message });
 
       try {
-        const { stream_id, session_id } = await startChatStream(
+        const { stream_id, session_id: streamSessionId } = await startChatStream(
           message,
           state.currentSessionId || undefined
         );
-
-        // If this is a new session, add it to the session list
-        if (!state.currentSessionId) {
-          const newSess = await createSession(
-            message.slice(0, 60),
-            state.model || undefined
-          ).catch(() => null);
-          if (newSess) {
-            // We already have the session from the stream start
-          }
-        }
 
         const es = connectChatStream(stream_id);
 
@@ -338,7 +326,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           const data = JSON.parse(e.data);
           dispatch({
             type: "STREAM_DONE",
-            sessionId: data.session_id || session_id,
+            sessionId: data.session_id || streamSessionId,
             model: data.model || "",
             title: data.title || "Chat",
           });

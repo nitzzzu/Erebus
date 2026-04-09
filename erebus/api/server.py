@@ -31,6 +31,13 @@ from erebus.config import ErebusSettings, get_settings
 
 logger = logging.getLogger(__name__)
 
+
+def asdict_session(session: Session) -> dict:
+    """Convert session dataclass to dict (avoids inline import)."""
+    from dataclasses import asdict
+
+    return asdict(session)
+
 # ── Request / Response Models ────────────────────────────────────────────────
 
 
@@ -251,9 +258,7 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         session = load_session(settings.data_dir, session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
-        from dataclasses import asdict
-
-        return {"session": asdict(session)}
+        return {"session": asdict_session(session)}
 
     @app.put("/api/sessions/{session_id}/rename")
     async def rename_session_endpoint(session_id: str, req: SessionRenameRequest):

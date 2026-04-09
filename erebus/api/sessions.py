@@ -78,13 +78,19 @@ def load_session(data_dir: Path, sid: str) -> Optional[Session]:
         return None
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-        session = Session(**{k: v for k, v in raw.items() if k in Session.__dataclass_fields__})
+        if not isinstance(raw, dict):
+            return None
+        # Validate required fields exist
+        if "session_id" not in raw or "title" not in raw or "model" not in raw:
+            return None
+        filtered = {k: v for k, v in raw.items() if k in Session.__dataclass_fields__}
+        session = Session(**filtered)
         with _lock:
             _sessions[sid] = session
             while len(_sessions) > _MAX_CACHE:
                 _sessions.popitem(last=False)
         return session
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError, ValueError):
         return None
 
 
