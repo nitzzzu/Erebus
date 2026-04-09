@@ -58,6 +58,12 @@ class ErebusSettings(BaseSettings):
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8741)
 
+    # --- Skills ---
+    skills_dir: Optional[str] = Field(
+        default=None,
+        description="Path to additional skills directory (SKILL.md format)",
+    )
+
     # --- Soul / Personality ---
     soul_file: Optional[str] = Field(
         default=None,

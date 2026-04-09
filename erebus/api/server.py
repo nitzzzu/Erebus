@@ -60,6 +60,7 @@ class SoulRequest(BaseModel):
 class SettingsResponse(BaseModel):
     default_model: str
     reasoning_model: Optional[str] = None
+    skills_dir: Optional[str] = None
     telegram_configured: bool = False
     teams_configured: bool = False
     api_host: str = "0.0.0.0"
@@ -69,6 +70,7 @@ class SettingsResponse(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     default_model: Optional[str] = None
     reasoning_model: Optional[str] = None
+    skills_dir: Optional[str] = None
 
 
 # ── App Factory ──────────────────────────────────────────────────────────────
@@ -208,6 +210,14 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         path = save_soul(req.content)
         return {"saved": True, "path": str(path)}
 
+    # -- Context Files (AGENTS.md) -------------------------------------------
+
+    @app.get("/api/context")
+    async def get_context():
+        from erebus.core.agent import _load_context_files
+
+        return {"content": _load_context_files()}
+
     # -- Channels ------------------------------------------------------------
 
     @app.get("/api/channels")
@@ -243,6 +253,7 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         return SettingsResponse(
             default_model=settings.default_model,
             reasoning_model=settings.reasoning_model,
+            skills_dir=settings.skills_dir,
             telegram_configured=bool(settings.telegram_token),
             teams_configured=bool(settings.teams_app_id),
             api_host=settings.api_host,
@@ -255,6 +266,8 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
             settings.default_model = req.default_model
         if req.reasoning_model is not None:
             settings.reasoning_model = req.reasoning_model
+        if req.skills_dir is not None:
+            settings.skills_dir = req.skills_dir
         return {"updated": True}
 
     # -- Health --------------------------------------------------------------
