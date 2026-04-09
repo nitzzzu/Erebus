@@ -20,6 +20,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "croniter>=3.0.0",
     "httpx>=0.27.0",
+    "sse-starlette>=3.3.0",
     "botbuilder-core>=4.16.0",
     "botbuilder-integration-aiohttp>=4.16.0",
     "aiohttp>=3.10.0",
