@@ -8,7 +8,6 @@ schedule management, and a server launcher.
 from __future__ import annotations
 
 import sys
-from typing import Optional
 
 from rich.prompt import Prompt
 
@@ -16,7 +15,6 @@ from erebus.cli.console import (
     console,
     print_error,
     print_info,
-    print_markdown,
     print_panel,
     print_success,
     print_table,
@@ -66,7 +64,10 @@ def _handle_slash_command(command: str, agent, settings) -> bool:
 
         skills = list_skills()
         if skills:
-            rows = [[s.get("name", "?"), s.get("description", ""), s.get("source", "")] for s in skills]
+            rows = [
+                [s.get("name", "?"), s.get("description", ""), s.get("source", "")]
+                for s in skills
+            ]
             print_table("Registered Skills", ["Name", "Description", "Source"], rows)
         else:
             print_info("No skills registered.")
@@ -79,7 +80,10 @@ def _handle_slash_command(command: str, agent, settings) -> bool:
         mem = ErebusMemory(settings)
         memories = mem.list_memories(uid)
         if memories:
-            rows = [[str(m.get("id", "")), str(m.get("content", "")), str(m.get("topics", ""))] for m in memories]
+            rows = [
+                [str(m.get("id", "")), str(m.get("content", "")), str(m.get("topics", ""))]
+                for m in memories
+            ]
             print_table(f"Memories for {uid}", ["ID", "Content", "Topics"], rows)
         else:
             print_info(f"No memories stored for user '{uid}'.")

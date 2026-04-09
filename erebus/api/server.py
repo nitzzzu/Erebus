@@ -14,7 +14,6 @@ from pydantic import BaseModel
 
 from erebus.config import ErebusSettings, get_settings
 
-
 # ── Request / Response Models ────────────────────────────────────────────────
 
 

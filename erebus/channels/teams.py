@@ -47,7 +47,11 @@ class TeamsBot:
 
         async def on_message(turn_context: TurnContext) -> None:
             user_text = turn_context.activity.text or ""
-            user_id = turn_context.activity.from_property.id if turn_context.activity.from_property else "teams-user"
+            user_id = (
+                turn_context.activity.from_property.id
+                if turn_context.activity.from_property
+                else "teams-user"
+            )
             response = agent.run(user_text, user_id=user_id)
             await turn_context.send_activity(response.content)
 

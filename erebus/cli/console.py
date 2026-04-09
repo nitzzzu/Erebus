@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from rich.console import Console
-from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
