@@ -57,6 +57,7 @@ def _parse_frontmatter(skill_md: Path) -> dict[str, Any]:
         "path": str(skill_md),
         "tags": [],
         "platforms": [],
+        "license": "",
     }
 
     try:

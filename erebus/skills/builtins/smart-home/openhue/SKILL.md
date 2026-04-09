@@ -38,7 +38,7 @@ openhue get lights
 openhue set light "Desk Lamp" --on
 openhue set light "Desk Lamp" --brightness 80
 openhue set light "Desk Lamp" --color "#ff6600"
-openhue set light "Desk Lamp" --ct 350  # Color temperature in mireds
+openhue set light "Desk Lamp" --ct 350  # Color temp in mireds (153=cool/6500K, 500=warm/2000K)
 ```
 
 ### Scenes

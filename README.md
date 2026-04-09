@@ -12,7 +12,7 @@
 
 | Feature | Description |
 |---------|-------------|
-| **40+ Skills** | Hermes-style SKILL.md skills organized in 17 categories — research, coding, creative, productivity, DevOps, and more |
+| **47 Skills** | Hermes-style SKILL.md skills organized in 17 categories — research, coding, creative, productivity, DevOps, and more |
 | **MCP Integration** | Connect to any Model Context Protocol server (stdio, SSE, HTTP) via config file |
 | **Multi-Model** | Switch between any LLM provider with `provider:model_id` syntax — OpenAI, Anthropic, Google, OpenRouter, Ollama, and more |
 | **TOML/JSON Config** | Agent configuration via `erebus.toml` or `erebus.json` — models, skills, MCP servers, and more |
@@ -31,7 +31,7 @@
 
 ---
 
-## Skills Library (40+ Skills in 17 Categories)
+## Skills Library (47 Skills in 17 Categories)
 
 | Category | Skills | Description |
 |----------|--------|-------------|

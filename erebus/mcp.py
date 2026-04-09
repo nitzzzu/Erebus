@@ -129,17 +129,11 @@ async def create_mcp_tools(configs: list[MCPServerConfig]) -> list[Any]:
     return tools
 
 
-def close_mcp_tools(tools: list[Any]) -> None:
-    """Synchronous cleanup helper — schedule close coroutines if possible."""
-    import asyncio
-
+async def close_mcp_tools(tools: list[Any]) -> None:
+    """Async cleanup — close all connected MCP tool instances."""
     for tool in tools:
         if hasattr(tool, "close"):
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(tool.close())
-                else:
-                    loop.run_until_complete(tool.close())
+                await tool.close()
             except Exception:
                 logger.debug("Could not close MCP tool: %s", tool)

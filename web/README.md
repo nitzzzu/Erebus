@@ -19,7 +19,7 @@ Modern web dashboard for the Erebus AI agent, built with **Next.js 16**, **Shadc
 - Memories persist across sessions for personalized interactions
 
 ### 🎯 Skills Browser
-- Browse 40+ skills organized in 17 categories
+- Browse 47 skills organized in 17 categories
 - View skill details, descriptions, and metadata
 - Skills are sourced from built-in, user-created, and external directories
 - Category filtering and search
