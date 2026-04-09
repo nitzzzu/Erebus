@@ -1,18 +1,42 @@
 """FastAPI REST API server for Erebus web UI.
 
-Exposes endpoints for chat, memory, skills, schedules, soul,
-channels, and settings management.
+Exposes endpoints for chat (sync + SSE streaming), sessions, memory,
+skills, schedules, soul, channels, and settings management.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
+import traceback
+import uuid
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sse_starlette import EventSourceResponse
 
+from erebus.api.sessions import (
+    Session,
+    all_sessions,
+    delete_session,
+    load_session,
+    new_session,
+    rename_session,
+    save_session,
+)
 from erebus.config import ErebusSettings, get_settings
+
+logger = logging.getLogger(__name__)
+
+
+def asdict_session(session: Session) -> dict:
+    """Convert session dataclass to dict (avoids inline import)."""
+    from dataclasses import asdict
+
+    return asdict(session)
 
 # ── Request / Response Models ────────────────────────────────────────────────
 
@@ -28,6 +52,22 @@ class ChatResponse(BaseModel):
     content: str
     session_id: str
     model: str
+
+
+class ChatStreamRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    user_id: str = "web-user"
+    model: Optional[str] = None
+
+
+class SessionCreateRequest(BaseModel):
+    title: str = "New Chat"
+    model: Optional[str] = None
+
+
+class SessionRenameRequest(BaseModel):
+    title: str
 
 
 class SkillCreateRequest(BaseModel):
@@ -73,6 +113,25 @@ class SettingsUpdateRequest(BaseModel):
     skills_dir: Optional[str] = None
 
 
+# ── Streaming Helpers ────────────────────────────────────────────────────────
+
+# Active streams: stream_id -> asyncio.Queue
+_streams: dict[str, asyncio.Queue] = {}
+
+# Truncation limits
+_MAX_TITLE_LEN = 60
+_MAX_TOOL_ARGS_LEN = 200
+_MAX_TOOL_RESULT_LEN = 500
+
+
+def _generate_title(message: str) -> str:
+    """Generate a short session title from the first user message."""
+    title = message.strip().replace("\n", " ")
+    if len(title) > _MAX_TITLE_LEN:
+        title = title[: _MAX_TITLE_LEN - 3] + "..."
+    return title
+
+
 # ── App Factory ──────────────────────────────────────────────────────────────
 
 
@@ -94,7 +153,7 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # -- Chat ----------------------------------------------------------------
+    # -- Chat (sync, backward compatible) ------------------------------------
 
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(req: ChatRequest):
@@ -113,6 +172,112 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         return ChatResponse(content=content, session_id=req.session_id, model=model)
+
+    # -- Chat SSE Streaming --------------------------------------------------
+
+    @app.post("/api/chat/start")
+    async def chat_start(req: ChatStreamRequest):
+        """Start a streaming chat and return a stream_id for SSE connection."""
+        model = req.model or settings.default_model
+
+        # Resolve or create session
+        if req.session_id:
+            session = load_session(settings.data_dir, req.session_id)
+            if session is None:
+                session = new_session(settings.data_dir, model, title="New Chat")
+        else:
+            session = new_session(settings.data_dir, model, title=_generate_title(req.message))
+
+        # Append user message to session
+        session.messages.append({"role": "user", "content": req.message})
+        save_session(settings.data_dir, session)
+
+        stream_id = uuid.uuid4().hex[:16]
+        queue: asyncio.Queue = asyncio.Queue()
+        _streams[stream_id] = queue
+
+        # Run agent in background thread
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(
+            None,
+            _run_agent_streaming,
+            settings,
+            session,
+            req.message,
+            model,
+            req.user_id,
+            stream_id,
+            queue,
+            loop,
+        )
+
+        return {
+            "stream_id": stream_id,
+            "session_id": session.session_id,
+        }
+
+    @app.get("/api/chat/stream")
+    async def chat_stream(request: Request, stream_id: str):
+        """SSE endpoint — connect with the stream_id from /api/chat/start."""
+        if stream_id not in _streams:
+            raise HTTPException(status_code=404, detail="Stream not found")
+
+        queue = _streams[stream_id]
+
+        async def event_generator():
+            try:
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=30)
+                    except asyncio.TimeoutError:
+                        yield {"event": "heartbeat", "data": ""}
+                        continue
+
+                    event_type = event.get("event", "message")
+                    data = json.dumps(event.get("data", {}))
+                    yield {"event": event_type, "data": data}
+
+                    if event_type in ("done", "error"):
+                        break
+            finally:
+                _streams.pop(stream_id, None)
+
+        return EventSourceResponse(event_generator(), ping=15)
+
+    # -- Sessions ------------------------------------------------------------
+
+    @app.get("/api/sessions")
+    async def list_sessions():
+        return {"sessions": all_sessions(settings.data_dir)}
+
+    @app.post("/api/sessions")
+    async def create_session(req: SessionCreateRequest):
+        model = req.model or settings.default_model
+        session = new_session(settings.data_dir, model, title=req.title)
+        return session.compact()
+
+    @app.get("/api/sessions/{session_id}")
+    async def get_session(session_id: str):
+        session = load_session(settings.data_dir, session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"session": asdict_session(session)}
+
+    @app.put("/api/sessions/{session_id}/rename")
+    async def rename_session_endpoint(session_id: str, req: SessionRenameRequest):
+        session = rename_session(settings.data_dir, session_id, req.title)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return session.compact()
+
+    @app.delete("/api/sessions/{session_id}")
+    async def delete_session_endpoint(session_id: str):
+        ok = delete_session(settings.data_dir, session_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"deleted": True}
 
     # -- Memory --------------------------------------------------------------
 
@@ -277,3 +442,92 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         return {"status": "ok", "version": "0.1.0"}
 
     return app
+
+
+# ── Agent Streaming Runner ───────────────────────────────────────────────────
+
+
+def _run_agent_streaming(
+    settings: ErebusSettings,
+    session: Session,
+    message: str,
+    model: str,
+    user_id: str,
+    stream_id: str,
+    queue: asyncio.Queue,
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    """Run the agent in a background thread, pushing SSE events into the queue."""
+    from agno.agent import RunEvent
+
+    from erebus.core.agent import create_agent
+
+    def _put(event_type: str, data: Any) -> None:
+        asyncio.run_coroutine_threadsafe(
+            queue.put({"event": event_type, "data": data}),
+            loop,
+        )
+
+    try:
+        agent = create_agent(settings=settings, user_id=user_id)
+        full_content = ""
+
+        response_iter = agent.run(
+            message,
+            session_id=session.session_id,
+            user_id=user_id,
+            stream=True,
+            stream_events=True,
+        )
+
+        for chunk in response_iter:
+            if chunk.event == RunEvent.tool_call_started:
+                tool_info = {
+                    "name": chunk.tool.tool_name if chunk.tool else "unknown",
+                    "args": str(chunk.tool.tool_args)[:_MAX_TOOL_ARGS_LEN] if chunk.tool else "",
+                }
+                _put("tool_start", tool_info)
+
+            elif chunk.event == RunEvent.tool_call_completed:
+                result_str = ""
+                if chunk.tool and chunk.tool.result is not None:
+                    result_str = str(chunk.tool.result)[:_MAX_TOOL_RESULT_LEN]
+                tool_info = {
+                    "name": chunk.tool.tool_name if chunk.tool else "unknown",
+                    "result": result_str,
+                }
+                _put("tool_end", tool_info)
+
+            elif chunk.event == RunEvent.run_content:
+                text = chunk.content or ""
+                if text:
+                    full_content += text
+                    _put("token", {"text": text})
+
+            elif chunk.event == RunEvent.run_started:
+                _put("run_started", {})
+
+            elif chunk.event == RunEvent.run_completed:
+                pass  # Handled below in done
+
+        # Save assistant message to session
+        session.messages.append({"role": "assistant", "content": full_content})
+
+        # Auto-title: if this is the first exchange, set session title
+        if len(session.messages) == 2:
+            session.title = _generate_title(session.messages[0].get("content", "New Chat"))
+
+        save_session(settings.data_dir, session)
+
+        _put("done", {
+            "session_id": session.session_id,
+            "model": model,
+            "title": session.title,
+        })
+
+    except Exception as exc:
+        logger.exception("Agent streaming error")
+        _put("error", {
+            "message": str(exc),
+            "trace": traceback.format_exc()[-500:],
+        })

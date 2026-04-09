@@ -1,52 +1,38 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Loader2, RotateCcw } from "lucide-react";
+import { Send, Plus, User, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { sendMessage, type ChatMessage } from "@/lib/api";
+import { MarkdownContent } from "@/components/markdown-content";
+import { ToolCallList } from "@/components/tool-call-card";
+import { ThinkingIndicator } from "@/components/thinking-indicator";
+import { useChat } from "@/store/chat-context";
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { state, sendChat, newSession } = useChat();
+  const { messages, busy, model, streamContent, activeTools } = state;
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [model, setModel] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamContent, activeTools]);
+
+  // Auto-focus textarea
+  useEffect(() => {
+    textareaRef.current?.focus();
   }, [messages]);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => {
     const text = input.trim();
-    if (!text || loading) return;
-
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    if (!text || busy) return;
     setInput("");
-    setLoading(true);
-
-    try {
-      const res = await sendMessage(text);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: res.content },
-      ]);
-      setModel(res.model);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `Error: ${err instanceof Error ? err.message : "Failed to send message"}`,
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  }, [input, loading]);
+    sendChat(text);
+  }, [input, busy, sendChat]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -55,6 +41,18 @@ export default function ChatPage() {
     }
   };
 
+  // Ctrl+N for new chat
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
+        e.preventDefault();
+        newSession();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [newSession]);
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -62,65 +60,121 @@ export default function ChatPage() {
         <div>
           <h1 className="text-lg font-semibold">Chat</h1>
           <p className="text-xs text-muted-foreground">
-            {model ? `Model: ${model}` : "Talk to Erebus"}
+            {model ? `Model: ${model}` : "Talk to Erebus — your AI agent"}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setMessages([])}
-          disabled={messages.length === 0}
-        >
-          <RotateCcw className="mr-1 h-3 w-3" />
+        <Button variant="outline" size="sm" onClick={newSession}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
           New Chat
         </Button>
       </div>
 
       {/* Messages */}
       <ScrollArea className="flex-1 p-4 sm:p-6">
-        {messages.length === 0 && (
-          <div className="flex h-full items-center justify-center">
+        {messages.length === 0 && !busy && (
+          <div className="flex h-full min-h-[60vh] items-center justify-center">
             <div className="text-center">
-              <div className="text-4xl">⚡</div>
-              <h2 className="mt-4 text-xl font-semibold">Welcome to Erebus</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Your feature-packed AI agent. Start a conversation below.
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+                <Bot className="h-8 w-8 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold">Welcome to Erebus</h2>
+              <p className="mt-2 max-w-md text-sm text-muted-foreground">
+                Your autonomous AI agent with memory, skills, and tool use.
+                Start a conversation below.
               </p>
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                {[
+                  "What can you help me with?",
+                  "Search the web for latest AI news",
+                  "Read and summarize a file",
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => {
+                      setInput(suggestion);
+                      textareaRef.current?.focus();
+                    }}
+                    className="rounded-full border border-border px-4 py-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
-        <div className="mx-auto max-w-3xl space-y-4">
+        <div className="mx-auto max-w-3xl space-y-1">
           {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <Card
-                className={`max-w-[85%] px-4 py-3 ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-card"
-                }`}
-              >
-                <div className="mb-1">
-                  <Badge variant={msg.role === "user" ? "secondary" : "outline"} className="text-[10px]">
-                    {msg.role === "user" ? "You" : "Erebus"}
-                  </Badge>
+            <div key={i} className="group">
+              {msg.role === "user" ? (
+                <div className="flex items-start gap-3 py-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary">
+                    <User className="h-4 w-4 text-primary-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1 pt-1">
+                    <div className="mb-1 text-xs font-medium text-muted-foreground">You</div>
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                      {msg.content}
+                    </div>
+                  </div>
                 </div>
-                <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
-              </Card>
+              ) : (
+                <div className="flex items-start gap-3 py-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card border border-border">
+                    <Bot className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1 pt-1">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Erebus</span>
+                      {model && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          {model}
+                        </Badge>
+                      )}
+                    </div>
+                    {msg.tool_calls && msg.tool_calls.length > 0 && (
+                      <ToolCallList tools={msg.tool_calls} />
+                    )}
+                    <div className="text-sm leading-relaxed">
+                      <MarkdownContent content={msg.content} />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
 
-          {loading && (
-            <div className="flex justify-start">
-              <Card className="bg-card px-4 py-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Erebus is thinking…
+          {/* Active streaming content */}
+          {busy && (
+            <div>
+              {/* Tool calls in progress */}
+              {activeTools.length > 0 && (
+                <div className="flex items-start gap-3 py-1">
+                  <div className="w-8 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <ToolCallList tools={activeTools} />
+                  </div>
                 </div>
-              </Card>
+              )}
+
+              {/* Streaming text */}
+              {streamContent ? (
+                <div className="flex items-start gap-3 py-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card border border-border">
+                    <Bot className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1 pt-1">
+                    <div className="mb-1 text-xs font-medium text-muted-foreground">Erebus</div>
+                    <div className="text-sm leading-relaxed">
+                      <MarkdownContent content={streamContent} />
+                      <span className="inline-block h-4 w-0.5 animate-pulse bg-primary ml-0.5" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                activeTools.length === 0 && <ThinkingIndicator />
+              )}
             </div>
           )}
 
@@ -128,21 +182,38 @@ export default function ChatPage() {
         </div>
       </ScrollArea>
 
-      {/* Input */}
-      <div className="border-t p-4 sm:p-6">
+      {/* Composer */}
+      <div className="border-t bg-background p-4 sm:p-6">
         <div className="mx-auto flex max-w-3xl gap-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
-            className="min-h-[44px] max-h-32 resize-none"
-            rows={1}
-            disabled={loading}
-          />
-          <Button onClick={handleSend} disabled={loading || !input.trim()} size="icon" className="shrink-0">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          <div className="relative flex-1">
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                busy
+                  ? "Waiting for response…"
+                  : "Message Erebus… (Enter to send, Shift+Enter for newline)"
+              }
+              className="min-h-[52px] max-h-40 resize-none pr-4"
+              rows={1}
+              disabled={busy}
+            />
+          </div>
+          <Button
+            onClick={handleSend}
+            disabled={busy || !input.trim()}
+            size="icon"
+            className="h-[52px] w-[52px] shrink-0 rounded-xl"
+          >
+            <Send className="h-4 w-4" />
           </Button>
+        </div>
+        <div className="mx-auto mt-2 max-w-3xl">
+          <p className="text-center text-[10px] text-muted-foreground">
+            Erebus has tools, memory, and skills. Type <kbd className="rounded border border-border px-1 py-0.5 font-mono text-[10px]">/help</kbd> for commands.
+          </p>
         </div>
       </div>
     </div>
