@@ -3,6 +3,11 @@
 Skills are Python modules in the ``builtins`` sub-package or user-created
 files under ``~/.erebus/skills/``.  Each module exposes a ``tools()``
 function that returns a list of Agno ``Toolkit`` instances.
+
+SKILL.md-format skills (Anthropic Agent Skills spec) are loaded by the
+Agno ``Skills`` / ``LocalSkills`` machinery in ``erebus.core.agent``.
+This registry handles Python-module skills for backward compatibility and
+exposes metadata for all discovered skills (both formats).
 """
 
 from __future__ import annotations
@@ -33,6 +38,25 @@ def _discover_builtin_skills() -> list[dict[str, Any]]:
     return skills
 
 
+def _discover_builtin_skill_md() -> list[dict[str, Any]]:
+    """Discover SKILL.md-format skills in the builtins directory."""
+    builtins_dir = Path(__file__).parent / "builtins"
+    skills: list[dict[str, Any]] = []
+    for skill_dir in sorted(builtins_dir.iterdir()):
+        skill_md = skill_dir / "SKILL.md"
+        if skill_dir.is_dir() and skill_md.is_file():
+            name, description = _parse_skill_md_frontmatter(skill_md)
+            skills.append(
+                {
+                    "name": name or skill_dir.name,
+                    "description": description or "",
+                    "source": "builtin-skill-md",
+                    "path": str(skill_md),
+                }
+            )
+    return skills
+
+
 def _discover_user_skills() -> list[dict[str, Any]]:
     """Discover user-created skill JSON descriptors in ~/.erebus/skills/."""
     settings = get_settings()
@@ -40,7 +64,7 @@ def _discover_user_skills() -> list[dict[str, Any]]:
     skills: list[dict[str, Any]] = []
     if not skills_dir.exists():
         return skills
-    for path in skills_dir.glob("*.json"):
+    for path in sorted(skills_dir.glob("*.json")):
         try:
             meta = json.loads(path.read_text())
             meta["source"] = "user"
@@ -48,13 +72,52 @@ def _discover_user_skills() -> list[dict[str, Any]]:
             skills.append(meta)
         except Exception:
             continue
+    # Also discover SKILL.md format skills in subdirectories
+    for skill_dir in sorted(skills_dir.iterdir()):
+        skill_md = skill_dir / "SKILL.md"
+        if skill_dir.is_dir() and skill_md.is_file():
+            name, description = _parse_skill_md_frontmatter(skill_md)
+            skills.append(
+                {
+                    "name": name or skill_dir.name,
+                    "description": description or "",
+                    "source": "user-skill-md",
+                    "path": str(skill_md),
+                }
+            )
     return skills
+
+
+def _parse_skill_md_frontmatter(skill_md: Path) -> tuple[str, str]:
+    """Parse YAML frontmatter from a SKILL.md file and return (name, description)."""
+    try:
+        text = skill_md.read_text(encoding="utf-8")
+        if text.startswith("---"):
+            end = text.find("---", 3)
+            if end == -1:
+                return "", ""
+            frontmatter = text[3:end].strip()
+            name = ""
+            description = ""
+            for line in frontmatter.splitlines():
+                if line.startswith("name:"):
+                    name = line.split(":", 1)[1].strip()
+                elif line.startswith("description:"):
+                    description = line.split(":", 1)[1].strip()
+            return name, description
+    except Exception:
+        pass
+    return "", ""
 
 
 def refresh_registry() -> list[dict[str, Any]]:
     """Re-scan and return all skill metadata."""
     global _SKILL_META
-    _SKILL_META = _discover_builtin_skills() + _discover_user_skills()
+    _SKILL_META = (
+        _discover_builtin_skills()
+        + _discover_builtin_skill_md()
+        + _discover_user_skills()
+    )
     return _SKILL_META
 
 

@@ -45,6 +45,7 @@ def _handle_slash_command(command: str, agent, settings) -> bool:
             "| `/memory [user_id]` | List memories |\n"
             "| `/schedules` | List cron schedules |\n"
             "| `/soul` | Show current personality |\n"
+            "| `/context` | Show loaded AGENTS.md context |\n"
             "| `/new` | Start a new session |\n"
             "| `/quit` | Exit Erebus |\n",
             title="Help",
@@ -71,6 +72,16 @@ def _handle_slash_command(command: str, agent, settings) -> bool:
             print_table("Registered Skills", ["Name", "Description", "Source"], rows)
         else:
             print_info("No skills registered.")
+        return False
+
+    if cmd == "/context":
+        from erebus.core.agent import _load_context_files
+
+        ctx = _load_context_files()
+        if ctx:
+            print_panel(ctx, title="Project Context (AGENTS.md)")
+        else:
+            print_info("No AGENTS.md or CLAUDE.md context files found.")
         return False
 
     if cmd == "/memory":
@@ -127,6 +138,14 @@ def interactive_chat() -> None:
     settings = get_settings()
     print_welcome()
     print_info(f"Model: {settings.default_model}")
+
+    # Show loaded context files (pi-mono style)
+    from erebus.core.agent import _load_context_files
+
+    context = _load_context_files()
+    if context:
+        print_info("AGENTS.md context loaded. Use /context to view.")
+
     print_info("Type /help for commands, /quit to exit.\n")
 
     from erebus.core.agent import create_agent
