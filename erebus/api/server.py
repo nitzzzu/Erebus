@@ -70,7 +70,7 @@ class SessionRenameRequest(BaseModel):
     title: str
 
 
-class SkillCreateRequest(BaseModel):
+class SkillCreateMdRequest(BaseModel):
     name: str
     description: str
     content: str
@@ -358,7 +358,7 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         return {"category": category, "skills": skills}
 
     @app.post("/api/skills")
-    async def create_skill(req: SkillCreateRequest):
+    async def create_skill(req: SkillCreateMdRequest):
         from erebus.skills.registry import save_user_skill_md
 
         path = save_user_skill_md(req.name, req.description, req.content, req.category)
@@ -585,7 +585,7 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         )
         if not result["sent"]:
             raise HTTPException(status_code=400, detail=result.get("error", "Send failed"))
-        return result
+        return {"sent": result["sent"], "channels": result["channels"]}
 
     # -- Health --------------------------------------------------------------
 
