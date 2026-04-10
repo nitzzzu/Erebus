@@ -32,8 +32,16 @@ from erebus.config import ErebusSettings, get_settings
 from erebus.skills.loader import build_skills_from_dirs
 from erebus.skills.registry import get_all_skill_tools
 from erebus.soul.loader import load_soul_instructions
+from erebus.tools.ask_user import AskUserTools
+from erebus.tools.file_edit import FileEditTools
+from erebus.tools.glob_tool import GlobTools
+from erebus.tools.grep_tool import GrepTools
 from erebus.tools.notify import NotifyTools
+from erebus.tools.repl import REPLTools
 from erebus.tools.scheduler import SchedulerTools
+from erebus.tools.todo import TodoTools
+from erebus.tools.web import WebFetchTools
+from erebus.tools.workspace import WorkspaceTools
 
 if TYPE_CHECKING:
     from agno.tools.toolkit import Toolkit
@@ -180,6 +188,8 @@ def create_agent(
     extra_tools: Optional[list["Toolkit"]] = None,
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    workspace_path: Optional[str] = None,
+    stream_id: Optional[str] = None,
 ) -> Agent:
     """Create and return a fully-configured Erebus agent.
 
@@ -193,6 +203,12 @@ def create_agent(
         Optional session identifier for storage continuity.
     user_id:
         Optional user identifier for memory scoping.
+    workspace_path:
+        Optional path to the active workspace directory.  When set, file,
+        glob, grep, file-edit, and REPL tools are rooted here.
+    stream_id:
+        Optional SSE stream identifier.  When set, AskUserTools is wired
+        to the active SSE channel so the agent can ask the user questions.
 
     Returns
     -------
@@ -208,13 +224,34 @@ def create_agent(
 
     db = SqliteDb(db_file=settings.db_path)
 
-    # Core tools: web search + file operations + shell (pi-mono style) + notifications
+    # Resolve workspace path: explicit arg > session workspace > cwd
+    effective_workspace = workspace_path
+    if not effective_workspace and session_id:
+        try:
+            from erebus.workspace.manager import WorkspaceManager
+            ws_mgr = WorkspaceManager(settings.data_dir)
+            ws = ws_mgr.get_session_workspace(session_id)
+            if ws:
+                effective_workspace = ws.path
+        except Exception:
+            pass
+
+    # Core tools (pi-mono style + new capabilities)
     tools: list[Toolkit] = [
         DuckDuckGoTools(),
-        FileTools(),
+        FileTools(base_dir=Path(effective_workspace) if effective_workspace else None),
         ShellTools(),
         NotifyTools(),
         SchedulerTools(),
+        # Claude-code-inspired tools
+        WorkspaceTools(session_id=session_id),
+        TodoTools(workspace_name=None),  # global todo; session/workspace scoping via WorkspaceTools
+        GlobTools(workspace_path=effective_workspace),
+        GrepTools(workspace_path=effective_workspace),
+        WebFetchTools(),
+        FileEditTools(workspace_path=effective_workspace),
+        REPLTools(workspace_path=effective_workspace),
+        AskUserTools(stream_id=stream_id),
     ]
 
     # Legacy Python-module skills (backward compatibility)
@@ -240,6 +277,16 @@ def create_agent(
 
     if context_files:
         instructions = f"{instructions}\n\n## Project Context\n\n{context_files}"
+
+    # Inject workspace context
+    if effective_workspace:
+        instructions = (
+            f"{instructions}\n\n"
+            f"## Active Workspace\n\n"
+            f"You are operating within workspace: `{effective_workspace}`\n"
+            f"All relative file paths are resolved against this directory.\n"
+            f"Use `set_workspace()` to switch workspaces if needed."
+        )
 
     # Model override from config
     model_str = agent_section.get("default_model", settings.default_model)

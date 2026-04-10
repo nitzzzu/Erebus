@@ -284,6 +284,24 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
 
         return EventSourceResponse(event_generator(), ping=15)
 
+    # -- Ask User Answer -----------------------------------------------------
+
+    class AnswerRequest(BaseModel):
+        answer: str
+
+    @app.post("/api/chat/answer/{stream_id}")
+    async def chat_answer(stream_id: str, req: AnswerRequest):
+        """Deliver a user answer to a waiting ask_user tool call."""
+        from erebus.tools.ask_user import deliver_answer
+
+        ok = deliver_answer(stream_id, req.answer)
+        if not ok:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No active ask_user waiting for stream '{stream_id}'",
+            )
+        return {"delivered": True, "stream_id": stream_id}
+
     # -- Sessions ------------------------------------------------------------
 
     @app.get("/api/sessions")
@@ -593,6 +611,99 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
     async def health():
         return {"status": "ok", "version": "0.1.0"}
 
+    # -- Workspaces ----------------------------------------------------------
+
+    class WorkspaceCreateRequest(BaseModel):
+        name: str
+        path: str
+        description: str = ""
+
+    class WorkspaceUpdateRequest(BaseModel):
+        path: Optional[str] = None
+        description: Optional[str] = None
+
+    class WorkspaceSetSessionRequest(BaseModel):
+        session_id: str
+
+    @app.get("/api/workspaces")
+    async def list_workspaces():
+        """List all configured workspaces."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        return {"workspaces": [w.as_dict() for w in mgr.list()]}
+
+    @app.post("/api/workspaces")
+    async def create_workspace(req: WorkspaceCreateRequest):
+        """Create a new workspace."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        try:
+            resolved = mgr._safe_path(req.path)
+            if not resolved.exists():
+                raise HTTPException(status_code=400, detail=f"Path does not exist: {resolved}")
+            ws = mgr.create(req.name, str(resolved), req.description)
+            return ws.as_dict()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
+    @app.get("/api/workspaces/{name}")
+    async def get_workspace(name: str):
+        """Get a workspace by name."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        ws = mgr.get(name)
+        if ws is None:
+            raise HTTPException(status_code=404, detail=f"Workspace '{name}' not found")
+        return ws.as_dict()
+
+    @app.put("/api/workspaces/{name}")
+    async def update_workspace(name: str, req: WorkspaceUpdateRequest):
+        """Update workspace path or description."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        ws = mgr.update(name, path=req.path, description=req.description)
+        if ws is None:
+            raise HTTPException(status_code=404, detail=f"Workspace '{name}' not found")
+        return ws.as_dict()
+
+    @app.delete("/api/workspaces/{name}")
+    async def delete_workspace(name: str):
+        """Delete a workspace."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        ok = mgr.delete(name)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"Workspace '{name}' not found")
+        return {"deleted": True}
+
+    @app.post("/api/workspaces/{name}/activate")
+    async def activate_workspace(name: str, req: WorkspaceSetSessionRequest):
+        """Associate a workspace with a chat session."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        ws = mgr.get(name)
+        if ws is None:
+            raise HTTPException(status_code=404, detail=f"Workspace '{name}' not found")
+        mgr.set_session_workspace(req.session_id, name)
+        return {"activated": True, "workspace": ws.as_dict(), "session_id": req.session_id}
+
+    @app.get("/api/sessions/{session_id}/workspace")
+    async def get_session_workspace(session_id: str):
+        """Get the workspace currently associated with a session."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        ws = mgr.get_session_workspace(session_id)
+        if ws is None:
+            return {"workspace": None}
+        return {"workspace": ws.as_dict()}
+
     return app
 
 
@@ -613,6 +724,7 @@ def _run_agent_streaming(
     from agno.agent import RunEvent
 
     from erebus.core.agent import create_agent
+    from erebus.tools.ask_user import register_stream, unregister_stream
 
     def _put(event_type: str, data: Any) -> None:
         asyncio.run_coroutine_threadsafe(
@@ -620,8 +732,27 @@ def _run_agent_streaming(
             loop,
         )
 
+    # Register SSE stream for AskUserTools
+    register_stream(stream_id, _put)
     try:
-        agent = create_agent(settings=settings, user_id=user_id)
+        # Resolve workspace for this session
+        workspace_path: Optional[str] = None
+        try:
+            from erebus.workspace.manager import WorkspaceManager
+            ws_mgr = WorkspaceManager(settings.data_dir)
+            ws = ws_mgr.get_session_workspace(session.session_id)
+            if ws:
+                workspace_path = ws.path
+        except Exception:
+            pass
+
+        agent = create_agent(
+            settings=settings,
+            user_id=user_id,
+            session_id=session.session_id,
+            workspace_path=workspace_path,
+            stream_id=stream_id,
+        )
         full_content = ""
 
         response_iter = agent.run(
@@ -683,3 +814,5 @@ def _run_agent_streaming(
             "message": str(exc),
             "trace": traceback.format_exc()[-500:],
         })
+    finally:
+        unregister_stream(stream_id)
