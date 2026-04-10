@@ -189,6 +189,9 @@ def create_agent(
         "db": db,
         "memory_manager": memory_manager,
         "enable_agentic_memory": True,
+        # Learning Machine — agent captures user profiles, memories and knowledge
+        # automatically after each response, improving personalisation over time.
+        "learning": True,
         "add_history_to_context": True,
         "num_history_runs": 10,
         "add_datetime_to_context": True,

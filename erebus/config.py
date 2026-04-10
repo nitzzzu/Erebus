@@ -70,6 +70,37 @@ class ErebusSettings(BaseSettings):
         description="Path to SOUL.md personality file",
     )
 
+    # --- Authentication ---
+    auth_enabled: bool = Field(default=False, description="Enable authentication middleware")
+    auth_provider: str = Field(
+        default="github",
+        description="Auth provider: 'github' (OAuth) or 'authelia' (forward-auth headers)",
+    )
+    secret_key: Optional[str] = Field(
+        default=None,
+        description="Secret key for signing session cookies (generate: openssl rand -hex 32)",
+    )
+
+    # GitHub OAuth
+    github_client_id: Optional[str] = Field(default=None, description="GitHub OAuth App client ID")
+    github_client_secret: Optional[str] = Field(
+        default=None, description="GitHub OAuth App client secret"
+    )
+    github_allowed_logins: Optional[str] = Field(
+        default=None,
+        description="Comma-separated list of allowed GitHub usernames (empty = allow all)",
+    )
+
+    # Authelia forward-auth
+    authelia_header_user: str = Field(
+        default="Remote-User",
+        description="Header name carrying the authenticated username from Authelia",
+    )
+    authelia_header_name: str = Field(
+        default="Remote-Name",
+        description="Header name carrying the display name from Authelia",
+    )
+
     # --- API Keys (pass-through for model providers) ---
     openai_api_key: Optional[str] = Field(default=None)
     anthropic_api_key: Optional[str] = Field(default=None)
