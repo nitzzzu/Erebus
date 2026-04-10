@@ -1,0 +1,63 @@
+# ─── Erebus Agent Configuration ─────────────────────────────────────────────
+#
+# Copy this file to one of:
+#   1. ./erebus.toml          (project-level, highest priority)
+#   2. ~/.erebus/erebus.toml  (user-level)
+# Or set EREBUS_CONFIG=/path/to/config.toml
+#
+# All sections are optional. Settings here override environment variables.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[agent]
+# Agent display name
+name = "Erebus"
+
+# Default LLM model (provider:model_id format)
+# default_model = "openai:gpt-4o"
+
+# Optional reasoning model for complex thinking
+# reasoning_model = "anthropic:claude-sonnet-4-20250514"
+
+# Additional instructions appended to the soul/personality
+# instructions = "Always be concise and cite sources."
+
+
+[skills]
+# Additional skill directories (hermes-style SKILL.md layout)
+# extra_dirs = ["~/my-skills", "/shared/team-skills"]
+
+# Disable specific skills by name
+# disabled = ["red-teaming", "godmode"]
+
+
+[mcp]
+# MCP (Model Context Protocol) server configurations
+# Each [[mcp.servers]] block defines one MCP server connection.
+
+# Example: Local filesystem server (stdio transport)
+# [[mcp.servers]]
+# name = "filesystem"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/home"]
+# transport = "stdio"
+
+# Example: Remote SSE server
+# [[mcp.servers]]
+# name = "brave-search"
+# url = "https://mcp.brave.com/sse"
+# transport = "sse"
+# env = { BRAVE_API_KEY = "your-key-here" }
+
+# Example: Streamable HTTP server
+# [[mcp.servers]]
+# name = "custom-api"
+# url = "https://api.example.com/mcp"
+# transport = "streamable-http"
+# timeout_seconds = 60
+
+# Example: Disable a server without removing config
+# [[mcp.servers]]
+# name = "experimental"
+# command = "python"
+# args = ["-m", "my_mcp_server"]
+# enabled = false

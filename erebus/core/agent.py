@@ -1,16 +1,19 @@
 """Core Erebus agent built on Agno framework.
 
 Combines multi-model support, agentic memory, persistent storage,
-skills, cron scheduling, and soul/personality in a single agent factory.
+skills, cron scheduling, MCP integration, and soul/personality
+in a single agent factory.
 
 Pi-mono style capabilities are enabled by default:
 - FileTools: read, write, edit, search files
 - ShellTools: execute shell/bash commands
-- Agno Skills: SKILL.md-based on-demand domain expertise
+- Agno Skills: SKILL.md-based on-demand domain expertise (hermes-style categories)
+- MCP: Model Context Protocol server integration
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -18,17 +21,21 @@ from typing import TYPE_CHECKING, Optional
 from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.memory import MemoryManager
-from agno.skills import LocalSkills, Skills
+from agno.skills import Skills
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.file import FileTools
 from agno.tools.shell import ShellTools
 
+from erebus.agent_config import get_config_section, load_agent_config
 from erebus.config import ErebusSettings, get_settings
+from erebus.skills.loader import build_skills_from_dirs
 from erebus.skills.registry import get_all_skill_tools
 from erebus.soul.loader import load_soul_instructions
 
 if TYPE_CHECKING:
     from agno.tools.toolkit import Toolkit
+
+logger = logging.getLogger(__name__)
 
 # Path to the built-in SKILL.md skills bundled with erebus
 _BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / "skills" / "builtins"
@@ -61,31 +68,39 @@ def _load_context_files() -> str:
     return "\n\n".join(parts)
 
 
-def _build_skills(settings: ErebusSettings) -> Skills:
-    """Build the Agno Skills object from built-in and user skill directories."""
-    loaders: list[LocalSkills] = []
+def _build_skills(settings: ErebusSettings) -> "Skills":
+    """Build the Agno Skills object from built-in, user, and external skill directories."""
+    skill_dirs: list[Path] = []
 
-    # Built-in SKILL.md skills
+    # Built-in SKILL.md skills (hermes-style categories)
     if _BUILTIN_SKILLS_DIR.exists():
-        loaders.append(LocalSkills(str(_BUILTIN_SKILLS_DIR)))
+        skill_dirs.append(_BUILTIN_SKILLS_DIR)
 
-    # User-configured skills directory
+    # User-configured skills directory (env / .env)
     if settings.skills_dir:
         skills_path = Path(settings.skills_dir)
         if skills_path.exists():
-            loaders.append(LocalSkills(str(skills_path)))
+            skill_dirs.append(skills_path)
 
     # ~/.erebus/skills/ as SKILL.md-style directory
     user_skills_dir = settings.data_dir / "skills"
     if user_skills_dir.exists():
-        loaders.append(LocalSkills(str(user_skills_dir)))
+        skill_dirs.append(user_skills_dir)
 
-    return Skills(loaders=loaders) if loaders else Skills(loaders=[])
+    # External skills directories from agent config file
+    agent_config = load_agent_config()
+    skills_config = get_config_section(agent_config, "skills")
+    for extra_dir in skills_config.get("extra_dirs", []):
+        p = Path(extra_dir).expanduser()
+        if p.is_dir():
+            skill_dirs.append(p)
+
+    return build_skills_from_dirs(*skill_dirs)
 
 
 def create_agent(
     settings: Optional[ErebusSettings] = None,
-    extra_tools: Optional[list[Toolkit]] = None,
+    extra_tools: Optional[list["Toolkit"]] = None,
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
 ) -> Agent:
@@ -105,10 +120,14 @@ def create_agent(
     Returns
     -------
     Agent
-        A ready-to-use Agno agent with pi-mono coding capabilities.
+        A ready-to-use Agno agent with comprehensive capabilities.
     """
     if settings is None:
         settings = get_settings()
+
+    # Load agent config file (TOML/JSON)
+    agent_config = load_agent_config()
+    agent_section = get_config_section(agent_config, "agent")
 
     db = SqliteDb(db_file=settings.db_path)
 
@@ -131,19 +150,31 @@ def create_agent(
     if extra_tools:
         tools.extend(extra_tools)
 
-    # Agno Skills — SKILL.md format (official Anthropic Agent Skills spec)
+    # Agno Skills — SKILL.md format (hermes-style nested categories)
     skills = _build_skills(settings)
 
     # Soul / personality instructions + AGENTS.md context files
     soul_instructions = load_soul_instructions(settings.soul_file)
     context_files = _load_context_files()
+
+    # Build instructions from soul + config + context
     instructions = soul_instructions
+
+    # Override from config file if present
+    config_instructions = agent_section.get("instructions")
+    if config_instructions:
+        instructions = f"{instructions}\n\n{config_instructions}"
+
     if context_files:
-        instructions = f"{soul_instructions}\n\n## Project Context\n\n{context_files}"
+        instructions = f"{instructions}\n\n## Project Context\n\n{context_files}"
+
+    # Model override from config
+    model = agent_section.get("default_model", settings.default_model)
+    reasoning_model = agent_section.get("reasoning_model", settings.reasoning_model)
 
     agent_kwargs: dict = {
-        "name": "Erebus",
-        "model": settings.default_model,
+        "name": agent_section.get("name", "Erebus"),
+        "model": model,
         "tools": tools,
         "skills": skills,
         "db": db,
@@ -156,8 +187,8 @@ def create_agent(
         "instructions": instructions,
     }
 
-    if settings.reasoning_model:
-        agent_kwargs["reasoning_model"] = settings.reasoning_model
+    if reasoning_model:
+        agent_kwargs["reasoning_model"] = reasoning_model
 
     agent = Agent(**agent_kwargs)
 
