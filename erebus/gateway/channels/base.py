@@ -1,8 +1,8 @@
 """Abstract base class for messaging channels.
 
 Inspired by nanobot's BaseChannel pattern: each channel inherits from
-``BaseChannel`` and implements ``start()`` / ``stop()`` for lifecycle,
-plus ``is_enabled()`` / ``is_configured()`` for config-driven activation.
+``BaseChannel`` and implements ``is_configured()`` to check credentials,
+and ``mount()`` to attach routes onto the gateway FastAPI app.
 """
 
 from __future__ import annotations

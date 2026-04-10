@@ -73,7 +73,7 @@ def sync_github_repo(
             if result.returncode != 0:
                 err = result.stderr.strip() or result.stdout.strip() or "unknown error"
                 logger.warning("Failed to sync %s: %s", repo, err)
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             logger.warning("Failed to sync %s — using cached version", repo)
     else:
         # Fresh clone
@@ -99,8 +99,8 @@ def sync_github_repo(
                 timeout=60,
                 check=False,
             )
-        except Exception:
-            pass  # Best-effort checkout
+        except (subprocess.SubprocessError, OSError):
+            logger.debug("Failed to checkout ref '%s' for %s", ref, repo)
 
     # Return the skills subdirectory
     skills_path = local_path / path if path else local_path
@@ -152,7 +152,7 @@ def sync_all_github_skills(config: dict[str, Any] | None = None) -> list[Path]:
             if skills_path.is_dir():
                 paths.append(skills_path)
                 logger.info("GitHub skills available at: %s", skills_path)
-        except Exception:
+        except (RuntimeError, ValueError, OSError):
             logger.exception("Failed to sync GitHub skills from %s", repo)
 
     return paths

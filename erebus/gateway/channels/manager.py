@@ -45,8 +45,8 @@ class ChannelManager:
                 try:
                     channel.mount(app)
                     logger.info("Channel '%s' mounted successfully", channel.name)
-                except Exception:
-                    logger.exception("Failed to mount channel '%s'", channel.name)
+                except (ImportError, RuntimeError, ValueError, OSError) as exc:
+                    logger.error("Failed to mount channel '%s': %s", channel.name, exc)
             else:
                 logger.debug("Channel '%s' not configured — skipped", channel.name)
 

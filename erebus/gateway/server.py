@@ -17,8 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from erebus.config import ErebusSettings, get_settings
 from erebus.gateway.channels.manager import ChannelManager
@@ -168,13 +167,32 @@ def create_gateway_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
 
         def _safe_resolve(subpath: str) -> Path | None:
             """Resolve a subpath within the static dir, returning None if it escapes."""
-            # Reject obvious traversal attempts
+            # Reject obvious traversal attempts before resolving
             if ".." in subpath.split("/"):
                 return None
+            # Resolve to absolute path and verify containment
             candidate = (static_root / subpath).resolve()
             if not str(candidate).startswith(str(static_root)):
                 return None
             return candidate
+
+        def _guess_media_type(path: Path) -> str | None:
+            """Return a media type for common static file extensions."""
+            suffix = path.suffix.lower()
+            return {
+                ".html": "text/html",
+                ".css": "text/css",
+                ".js": "application/javascript",
+                ".json": "application/json",
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".svg": "image/svg+xml",
+                ".ico": "image/x-icon",
+                ".woff": "font/woff",
+                ".woff2": "font/woff2",
+                ".txt": "text/plain",
+            }.get(suffix)
 
         # Serve the Next.js static export with SPA fallback
         @app.get("/{full_path:path}")
@@ -186,7 +204,7 @@ def create_gateway_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
 
             # Try exact file
             if safe.is_file():
-                return None  # Let StaticFiles handle it
+                return FileResponse(safe, media_type=_guess_media_type(safe))
 
             # Try path.html (Next.js static export pattern)
             html_safe = _safe_resolve(f"{full_path.rstrip('/')}.html")
@@ -203,9 +221,6 @@ def create_gateway_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
             if root_index.is_file():
                 return HTMLResponse(root_index.read_text(encoding="utf-8"))
             return JSONResponse({"error": "not found"}, status_code=404)
-
-        # Mount static files for assets (_next/*, images, etc.)
-        app.mount("/", StaticFiles(directory=str(_WEB_STATIC_DIR), html=True), name="web-ui")
     else:
         # No web UI build available
         @app.get("/")
