@@ -78,7 +78,9 @@ func (s *Store) sessionsDir() string {
 }
 
 func (s *Store) sessionPath(sid string) string {
-	return filepath.Join(s.sessionsDir(), sid+".json")
+	// Sanitize session ID to prevent path traversal
+	clean := filepath.Base(sid)
+	return filepath.Join(s.sessionsDir(), clean+".json")
 }
 
 // Save persists a session to disk and updates the cache.

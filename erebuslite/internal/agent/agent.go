@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -233,8 +234,8 @@ func (a *Agent) buildTools() []tool.BaseTool {
 		"write_file",
 		"Write content to a file at the given path, creating directories as needed.",
 		func(ctx context.Context, input *FileWriteInput) (string, error) {
-			dir := input.Path[:strings.LastIndex(input.Path, "/")]
-			if dir != "" {
+			dir := filepath.Dir(input.Path)
+			if dir != "" && dir != "." {
 				_ = os.MkdirAll(dir, 0o755)
 			}
 			if err := os.WriteFile(input.Path, []byte(input.Content), 0o644); err != nil {

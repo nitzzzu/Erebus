@@ -114,9 +114,12 @@ func (r *Registry) Summaries() string {
 func SaveUserSkill(dataDir, name, description, content, category string) (string, error) {
 	dir := filepath.Join(dataDir, "user-skills")
 	if category != "" {
+		// Sanitize category to prevent path traversal
+		category = filepath.Base(category)
 		dir = filepath.Join(dir, category)
 	}
-	slug := strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+	// Sanitize name to prevent path traversal
+	slug := filepath.Base(strings.ToLower(strings.ReplaceAll(name, " ", "-")))
 	skillDir := filepath.Join(dir, slug)
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		return "", err
