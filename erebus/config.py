@@ -47,6 +47,14 @@ class ErebusSettings(BaseSettings):
     telegram_webhook_url: Optional[str] = Field(
         default=None, description="Public HTTPS URL for Telegram webhooks"
     )
+    telegram_allowed_users: Optional[str] = Field(
+        default=None,
+        description="Comma-separated Telegram user IDs allowed to interact with the bot",
+    )
+    telegram_home_channel: Optional[str] = Field(
+        default=None,
+        description="Telegram chat/channel ID for proactive bot notifications",
+    )
 
     # --- Microsoft Teams ---
     teams_app_id: Optional[str] = Field(default=None, description="Microsoft Teams App ID")
@@ -69,6 +77,10 @@ class ErebusSettings(BaseSettings):
         default=None,
         description="Default apprise notification URL (quick single-channel setup)",
     )
+
+    # --- Agent Behaviour ---
+    enable_agentic_memory: bool = Field(default=False, description="Enable post-turn memory extraction")
+    enable_learning: bool = Field(default=False, description="Enable post-turn user-profile learning")
 
     # --- Soul / Personality ---
     soul_file: Optional[str] = Field(
@@ -107,11 +119,31 @@ class ErebusSettings(BaseSettings):
         description="Header name carrying the display name from Authelia",
     )
 
-    # --- API Keys (pass-through for model providers) ---
+    # --- API Keys & Endpoints (pass-through for model providers) ---
+    # OpenAI / custom OpenAI-compatible
     openai_api_key: Optional[str] = Field(default=None)
+    openai_endpoint: Optional[str] = Field(
+        default=None, description="Custom base URL for OpenAI-compatible API"
+    )
+
+    # Anthropic / Claude
     anthropic_api_key: Optional[str] = Field(default=None)
+    anthropic_endpoint: Optional[str] = Field(
+        default=None, description="Custom base URL for Anthropic API"
+    )
+
+    # Google
     google_api_key: Optional[str] = Field(default=None)
+
+    # OpenRouter (OpenAI-compatible; set provider to 'openrouter')
     openrouter_api_key: Optional[str] = Field(default=None)
+
+    # Azure AI Foundry
+    azure_foundry_endpoint: Optional[str] = Field(
+        default=None, description="Azure AI Foundry endpoint URL"
+    )
+    azure_foundry_api_key: Optional[str] = Field(default=None)
+    azure_foundry_api_version: Optional[str] = Field(default=None)
 
 
 def get_settings() -> ErebusSettings:

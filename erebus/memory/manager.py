@@ -42,17 +42,23 @@ class ErebusMemory:
         return self._db
 
     def list_memories(self, user_id: str) -> list[dict]:
-        """Return all memories for *user_id* from the database.
-
-        Uses the underlying Agno DB read method.
-        """
-        rows = self._db.read(table_name="memory", filters={"user_id": user_id})
-        return rows if rows else []
+        """Return all memories for *user_id* from the database."""
+        rows = self._db.get_user_memories(user_id=user_id)
+        if not rows:
+            return []
+        return [
+            {
+                "id": str(r.id) if hasattr(r, "id") else "",
+                "content": r.memory if hasattr(r, "memory") else str(r),
+                "topics": r.topics if hasattr(r, "topics") else [],
+            }
+            for r in rows
+        ]
 
     def delete_memory(self, memory_id: str) -> bool:
         """Delete a memory by its ID."""
         try:
-            self._db.delete(table_name="memory", filters={"id": memory_id})
+            self._db.delete_user_memory(memory_id=memory_id)
             return True
         except Exception:
             return False

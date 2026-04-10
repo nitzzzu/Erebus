@@ -41,6 +41,66 @@ logger = logging.getLogger(__name__)
 # Path to the built-in SKILL.md skills bundled with erebus
 _BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / "skills" / "builtins"
 
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def _build_model(model_str: str, settings: "ErebusSettings"):
+    """Parse ``provider:model_id`` and return the appropriate Agno model object.
+
+    Supported providers:
+    - ``openai``        — OpenAI or any custom OpenAI-compatible endpoint
+    - ``azure_foundry`` — Azure AI Foundry
+    - ``openrouter``    — OpenRouter (OpenAI-compatible)
+    - ``claude`` / ``anthropic`` — Anthropic Claude
+    """
+    if ":" in model_str:
+        provider, model_id = model_str.split(":", 1)
+    else:
+        provider, model_id = "openai", model_str
+
+    provider = provider.lower()
+
+    if provider in ("azure_foundry", "azure"):
+        from agno.models.azure import AzureAIFoundry
+
+        kwargs: dict = {
+            "id": model_id,
+            "api_key": settings.azure_foundry_api_key,
+            "azure_endpoint": settings.azure_foundry_endpoint,
+        }
+        if settings.azure_foundry_api_version:
+            kwargs["api_version"] = settings.azure_foundry_api_version
+        return AzureAIFoundry(**kwargs)
+
+    if provider == "openrouter":
+        from agno.models.openai import OpenAIChat
+
+        return OpenAIChat(
+            id=model_id,
+            api_key=settings.openrouter_api_key,
+            base_url=_OPENROUTER_BASE_URL,
+        )
+
+    if provider in ("claude", "anthropic"):
+        from agno.models.anthropic import Claude
+
+        kwargs = {"id": model_id}
+        if settings.anthropic_api_key:
+            kwargs["api_key"] = settings.anthropic_api_key
+        if settings.anthropic_endpoint:
+            kwargs["client_params"] = {"base_url": settings.anthropic_endpoint}
+        return Claude(**kwargs)
+
+    # Default: openai (with optional custom endpoint)
+    from agno.models.openai import OpenAIChat
+
+    kwargs = {"id": model_id}
+    if settings.openai_api_key:
+        kwargs["api_key"] = settings.openai_api_key
+    if settings.openai_endpoint:
+        kwargs["base_url"] = settings.openai_endpoint
+    return OpenAIChat(**kwargs)
+
 
 def _load_context_files() -> str:
     """Load AGENTS.md / CLAUDE.md context files (pi-mono style).
@@ -146,12 +206,6 @@ def create_agent(
 
     db = SqliteDb(db_file=settings.db_path)
 
-    # Memory manager — uses the same (or cheaper) model for memory extraction
-    memory_manager = MemoryManager(
-        model=settings.default_model,
-        db=db,
-    )
-
     # Core tools: web search + file operations + shell (pi-mono style) + notifications
     tools: list[Toolkit] = [
         DuckDuckGoTools(),
@@ -185,8 +239,14 @@ def create_agent(
         instructions = f"{instructions}\n\n## Project Context\n\n{context_files}"
 
     # Model override from config
-    model = agent_section.get("default_model", settings.default_model)
-    reasoning_model = agent_section.get("reasoning_model", settings.reasoning_model)
+    model_str = agent_section.get("default_model", settings.default_model)
+    reasoning_model_str = agent_section.get("reasoning_model", settings.reasoning_model)
+
+    model = _build_model(model_str, settings)
+    reasoning_model = _build_model(reasoning_model_str, settings) if reasoning_model_str else None
+
+    # Memory manager — reuses the same model object (already constructed above)
+    memory_manager = MemoryManager(model=model, db=db)
 
     agent_kwargs: dict = {
         "name": agent_section.get("name", "Erebus"),
@@ -195,10 +255,8 @@ def create_agent(
         "skills": skills,
         "db": db,
         "memory_manager": memory_manager,
-        "enable_agentic_memory": True,
-        # Learning Machine — agent captures user profiles, memories and knowledge
-        # automatically after each response, improving personalisation over time.
-        "learning": True,
+        "enable_agentic_memory": settings.enable_agentic_memory,
+        "learning": settings.enable_learning,
         "add_history_to_context": True,
         "num_history_runs": 10,
         "add_datetime_to_context": True,
