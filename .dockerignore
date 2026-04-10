@@ -1,0 +1,46 @@
+# Version control
+.git
+.github
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+.venv
+venv
+.pytest_cache
+.ruff_cache
+
+# Node / Web
+web/node_modules
+web/.next
+web/out
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Docs & config
+*.md
+!README.md
+!erebus/**/SKILL.md
+!erebus/**/DESCRIPTION.md
+!erebus/**/SOUL.md
+.env
+.env.*
+!.env.example

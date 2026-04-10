@@ -106,6 +106,25 @@ def _discover_external_skills() -> list[dict[str, Any]]:
     return skills
 
 
+def _discover_github_skills() -> list[dict[str, Any]]:
+    """Discover skills from GitHub-synced repositories."""
+    try:
+        from erebus.skills.github_loader import sync_all_github_skills
+
+        github_dirs = sync_all_github_skills()
+    except Exception:
+        return []
+
+    skills: list[dict[str, Any]] = []
+    for d in github_dirs:
+        if d.is_dir():
+            found = discover_skills(d, recursive=True, filter_platform=True)
+            for s in found:
+                s["source"] = "github"
+                skills.append(s)
+    return skills
+
+
 def refresh_registry() -> list[dict[str, Any]]:
     """Re-scan and return all skill metadata."""
     global _SKILL_META
@@ -114,6 +133,7 @@ def refresh_registry() -> list[dict[str, Any]]:
         + _discover_builtin_skill_md()
         + _discover_user_skills()
         + _discover_external_skills()
+        + _discover_github_skills()
     )
     return _SKILL_META
 

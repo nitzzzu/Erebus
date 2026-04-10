@@ -12,7 +12,10 @@
 
 | Feature | Description |
 |---------|-------------|
+| **Unified Gateway** | Single process serves API, web UI, Telegram, and Teams — `erebus gateway` |
+| **Docker Support** | Multi-stage Dockerfile + Docker Compose for one-command deployment |
 | **47 Skills** | Hermes-style SKILL.md skills organized in 17 categories — research, coding, creative, productivity, DevOps, and more |
+| **GitHub Skills** | Load and sync skills directly from GitHub repositories |
 | **MCP Integration** | Connect to any Model Context Protocol server (stdio, SSE, HTTP) via config file |
 | **Multi-Model** | Switch between any LLM provider with `provider:model_id` syntax — OpenAI, Anthropic, Google, OpenRouter, Ollama, and more |
 | **TOML/JSON Config** | Agent configuration via `erebus.toml` or `erebus.json` — models, skills, MCP servers, and more |
@@ -27,6 +30,7 @@
 | **Rich CLI** | Interactive terminal with panels, tables, spinners, markdown rendering, and syntax highlighting |
 | **REST API** | FastAPI backend powering both the CLI and web UI |
 | **External Skills** | Load custom skills from any directory — share skills across projects |
+| **Onboarding** | Automatic setup page when agent not yet configured |
 | **Progressive Disclosure** | Skills use lazy loading — agent sees summaries, loads full instructions on demand |
 
 ---
@@ -59,22 +63,23 @@
 
 ```
 erebus/
+├── gateway/        # Unified gateway (API + channels + web UI)
+│   ├── server.py   # Gateway app factory
+│   └── channels/   # Channel subsystem
+│       ├── base.py           # Abstract BaseChannel
+│       ├── manager.py        # Channel manager (enable/disable)
+│       ├── telegram_channel.py  # Telegram via Agno interface
+│       └── teams_channel.py     # Teams via Bot Framework
 ├── core/           # Agent factory (Agno Agent + multi-model + MCP)
 ├── memory/         # MemoryManager facade
 ├── skills/         # Hermes-style skill system
-│   ├── loader.py   # Recursive skill discovery from nested dirs
-│   ├── registry.py # Skill metadata registry + categories
-│   └── builtins/   # 40+ skills in 17 categories
-│       ├── mcp/            # MCP integration skills
-│       ├── research/       # Academic research skills
-│       ├── creative/       # Creative content skills
-│       ├── productivity/   # Productivity tool skills
-│       ├── software-development/  # Dev workflow skills
-│       ├── github/         # GitHub workflow skills
-│       └── ...             # 10 more categories
+│   ├── loader.py        # Recursive skill discovery from nested dirs
+│   ├── registry.py      # Skill metadata registry + categories
+│   ├── github_loader.py # GitHub skill sync + caching
+│   └── builtins/        # 47 skills in 17 categories
 ├── scheduler/      # Cron scheduler (croniter + JSON persistence)
 ├── soul/           # SOUL.md loader and personality management
-├── channels/       # Telegram + Microsoft Teams integrations
+├── channels/       # Legacy channel implementations
 ├── cli/            # Rich-powered interactive terminal
 ├── api/            # FastAPI REST API server
 ├── mcp.py          # MCP server config and connection management
@@ -88,6 +93,10 @@ web/                # Next.js + Shadcn web UI
 │   ├── hooks/      # Custom React hooks
 │   └── lib/        # API client + utilities
 └── ...
+
+Dockerfile          # Multi-stage build (Node.js + Python)
+docker-compose.yml  # Single-command deployment
+.env.example        # Environment variable template
 ```
 
 ---
@@ -100,7 +109,36 @@ web/                # Next.js + Shadcn web UI
 - Node.js 18+ (for web UI)
 - An LLM API key (OpenAI, Anthropic, etc.)
 
-### 1. Install the Python Backend
+### Option A: Docker (Recommended)
+
+The fastest way to get started — everything runs in a single container:
+
+```bash
+# Clone the repository
+git clone https://github.com/nitzzzu/Erebus.git
+cd Erebus
+
+# Copy and configure environment
+cp .env.example .env
+# Edit .env to add your API key(s)
+
+# Start with Docker Compose
+docker compose up -d
+
+# Open http://localhost:8741
+```
+
+The unified gateway serves everything:
+- **Web UI** at `/`
+- **REST API** at `/api/`
+- **Telegram bot** at `/telegram/webhook` (if configured)
+- **Teams bot** at `/api/messages` (if configured)
+
+If no API key is configured, the gateway shows an onboarding page with setup instructions.
+
+### Option B: Local Install
+
+#### 1. Install the Python Backend
 
 ```bash
 # Clone the repository
@@ -111,7 +149,7 @@ cd Erebus
 pip install -e ".[all]"
 ```
 
-### 2. Configure
+#### 2. Configure
 
 Create a `.env` file in the project root:
 
@@ -137,7 +175,7 @@ EREBUS_TEAMS_APP_ID=...
 EREBUS_TEAMS_APP_PASSWORD=...
 ```
 
-### 3. Agent Config File (Optional)
+#### 3. Agent Config File (Optional)
 
 Create `erebus.toml` for advanced configuration:
 
@@ -149,6 +187,12 @@ name = "Erebus"
 [skills]
 # extra_dirs = ["~/my-skills"]
 # disabled = ["red-teaming"]
+
+# Load skills from GitHub
+# [[skills.github]]
+# repo = "owner/repo"
+# path = "skills"
+# ref = "main"
 
 # Add MCP servers
 [[mcp.servers]]
@@ -165,52 +209,25 @@ env = { BRAVE_API_KEY = "your-key" }
 
 See `erebus.toml.example` for all options.
 
-### 4. Start Chatting (CLI)
+#### 4. Start the Unified Gateway (Recommended)
 
 ```bash
+erebus gateway
+```
+
+This starts a single process that serves the API, web UI, and all configured channels (Telegram, Teams).
+
+#### 5. Or Start Individual Services
+
+```bash
+# Interactive CLI chat
 erebus chat
-```
 
-Available CLI commands:
-| Command | Description |
-|---------|-------------|
-| `/help` | Show all commands |
-| `/model [provider:id]` | Show or switch the active model |
-| `/skills` | List registered skills |
-| `/memory [user_id]` | List stored memories |
-| `/schedules` | List cron schedules |
-| `/soul` | Show current personality |
-| `/new` | Start a new session |
-| `/quit` | Exit |
-
-### 5. Start the API Server
-
-```bash
+# API server only
 erebus serve
-```
 
-The REST API starts on `http://localhost:8741`.
-
-### 6. Start the Web UI
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) — the dashboard connects to the API at `localhost:8741`.
-
-### 7. Start the Telegram Bot
-
-```bash
-erebus telegram
-```
-
-### 8. Start the Teams Bot
-
-```bash
-erebus teams
+# Build and run the web UI (development mode)
+cd web && npm install && npm run dev
 ```
 
 ---
@@ -299,6 +316,23 @@ Add external skill directories via config:
 [skills]
 extra_dirs = ["~/my-skills", "/shared/team-skills"]
 ```
+
+### Loading Skills from GitHub
+
+Sync skills directly from GitHub repositories:
+
+```toml
+# In erebus.toml
+[[skills.github]]
+repo = "owner/repo"           # GitHub repository
+path = "skills"               # Subdirectory containing skills (default: root)
+ref = "main"                  # Branch/tag/commit (default: repo default)
+
+[[skills.github]]
+repo = "another-org/more-skills"
+```
+
+Skills are cached in `~/.erebus/skills/github/` and synced on startup.
 
 ---
 
