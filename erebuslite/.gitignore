@@ -1,0 +1,7 @@
+# Binary
+erebuslite
+*.exe
+
+# IDE
+.idea/
+.vscode/
