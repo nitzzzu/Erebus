@@ -130,16 +130,15 @@ def create_gateway_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
     channel_manager = ChannelManager(settings)
     channel_manager.mount_all(app)
 
-    # Override the /api/channels endpoint to use the channel manager
-    # Remove the existing route first, then add the new one
-    app.routes[:] = [r for r in app.routes if getattr(r, "path", None) != "/api/channels"]
+    # ── 2. Override select API endpoints with gateway-aware versions ────────
+    # Remove original /api/channels and /api/health routes, then add
+    # replacements that include channel-manager awareness.
+    _override_paths = {"/api/channels", "/api/health"}
+    app.routes[:] = [r for r in app.routes if getattr(r, "path", None) not in _override_paths]
 
     @app.get("/api/channels")
-    async def list_channels():
+    async def list_channels_gateway():
         return {"channels": channel_manager.status_all()}
-
-    # ── 2. Enhanced health endpoint ─────────────────────────────────────────
-    app.routes[:] = [r for r in app.routes if getattr(r, "path", None) != "/api/health"]
 
     @app.get("/api/health")
     async def gateway_health():
@@ -159,20 +158,32 @@ def create_gateway_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         @app.get("/{full_path:path}")
         async def serve_spa(request: Request, full_path: str):
             """Serve the Next.js static export with SPA fallback."""
+            # Sanitize path to prevent directory traversal
+            resolved = (_WEB_STATIC_DIR / full_path).resolve()
+            if not str(resolved).startswith(str(_WEB_STATIC_DIR.resolve())):
+                return JSONResponse({"error": "forbidden"}, status_code=403)
+
             # Try exact file
-            file_path = _WEB_STATIC_DIR / full_path
-            if file_path.is_file():
+            if resolved.is_file():
                 return None  # Let StaticFiles handle it
 
             # Try path.html (Next.js static export pattern)
-            html_path = _WEB_STATIC_DIR / f"{full_path.rstrip('/')}.html"
-            if html_path.is_file():
-                return HTMLResponse(html_path.read_text(encoding="utf-8"))
+            html_resolved = (_WEB_STATIC_DIR / f"{full_path.rstrip('/')}.html").resolve()
+            if (
+                str(html_resolved).startswith(str(_WEB_STATIC_DIR.resolve()))
+                and html_resolved.is_file()
+            ):
+                return HTMLResponse(html_resolved.read_text(encoding="utf-8"))
 
             # Try path/index.html
-            index_in_dir = _WEB_STATIC_DIR / full_path.rstrip("/") / "index.html"
-            if index_in_dir.is_file():
-                return HTMLResponse(index_in_dir.read_text(encoding="utf-8"))
+            index_resolved = (
+                _WEB_STATIC_DIR / full_path.rstrip("/") / "index.html"
+            ).resolve()
+            if (
+                str(index_resolved).startswith(str(_WEB_STATIC_DIR.resolve()))
+                and index_resolved.is_file()
+            ):
+                return HTMLResponse(index_resolved.read_text(encoding="utf-8"))
 
             # SPA fallback: serve root index.html
             root_index = _WEB_STATIC_DIR / "index.html"

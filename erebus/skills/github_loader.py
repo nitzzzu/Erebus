@@ -69,7 +69,11 @@ def sync_github_repo(
         logger.info("Syncing GitHub skills repo: %s", repo)
         try:
             cmd = ["git", "-C", str(local_path), "pull", "--ff-only"]
-            subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+            if result.returncode != 0:
+                logger.warning(
+                    "Failed to sync %s: %s", repo, result.stderr.strip() or result.stdout.strip()
+                )
         except Exception:
             logger.warning("Failed to sync %s — using cached version", repo)
     else:
