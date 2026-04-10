@@ -233,13 +233,10 @@ def install_skill_from_github_url(url: str) -> Path:
     subpath = "/".join(subpath_parts)
 
     # Determine skill name from the last validated path component (or repo name).
-    # Re-extract from the validated regex match to further break taint flow.
-    if subpath_parts:
-        skill_name = _safe.match(subpath_parts[-1]).group()  # type: ignore[union-attr]
-    else:
-        skill_name = _safe.match(repo_name).group()  # type: ignore[union-attr]
+    # Both candidates have already been confirmed safe by the loop/regex above.
+    skill_name = subpath_parts[-1] if subpath_parts else repo_name
 
-    # Validate skill_name for safe filesystem use
+    # Final safety check — should always pass given the validation above.
     if not _safe.match(skill_name):
         raise ValueError(f"Derived skill name is not safe for filesystem use: {skill_name!r}")
 
