@@ -158,6 +158,179 @@ def sync_all_github_skills(config: dict[str, Any] | None = None) -> list[Path]:
     return paths
 
 
+def install_skill_from_github_url(url: str) -> Path:
+    """Install a skill from a GitHub folder URL using sparse checkout.
+
+    Accepts URLs in these formats:
+      - ``https://github.com/owner/repo/tree/branch/path/to/skill``
+      - ``https://github.com/owner/repo`` (root of repo)
+
+    The skill folder is copied into ``~/.erebus/user-skills/`` so the
+    agent picks it up on the next registry refresh.
+
+    Parameters
+    ----------
+    url:
+        GitHub URL pointing to a skill folder.
+
+    Returns
+    -------
+    Path
+        The installed skill directory under ``~/.erebus/user-skills/``.
+
+    Raises
+    ------
+    ValueError
+        If the URL cannot be parsed as a GitHub folder URL.
+    RuntimeError
+        If the sparse checkout or copy operation fails.
+
+    Note
+    ----
+    Requires ``git`` to be installed and available on ``PATH``.
+    """
+    import re
+    import tempfile
+
+    # Parse the GitHub URL using a linear (non-backtracking) pattern.
+    # https://github.com/{owner}/{repo}/tree/{ref}/{path}
+    # Each captured segment is deliberately limited to avoid ReDoS.
+    pattern = re.compile(
+        r"https?://github\.com"
+        r"/([A-Za-z0-9_.\-]+)"           # owner
+        r"/([A-Za-z0-9_.\-]+)"           # repo
+        r"(?:/tree/([A-Za-z0-9_.\-/]+))?"  # optional /tree/<ref>[/<path>]
+        r"/?$"
+    )
+    m = pattern.match(url.rstrip("/"))
+    if not m:
+        raise ValueError(
+            f"Cannot parse GitHub URL: {url!r}. "
+            "Expected format: https://github.com/owner/repo/tree/branch/path/to/skill"
+        )
+
+    _tree_part = m.group(3) or ""
+    repo_name = m.group(2)
+
+    # Split tree_part into ref and optional subpath.
+    # The ref is the first path segment; the rest is the subpath.
+    tree_parts = [p for p in _tree_part.split("/") if p]
+    ref = tree_parts[0] if tree_parts else ""
+    subpath_parts = tree_parts[1:]
+
+    # Validate that ref and subpath parts contain only safe characters and
+    # start with an alphanumeric character (prevents flag-like or traversal values).
+    _safe = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]*$")
+    if ref and not _safe.match(ref):
+        raise ValueError(f"Unsafe git ref: {ref!r}")
+    for part in subpath_parts:
+        if not _safe.match(part):
+            raise ValueError(f"Unsafe path component: {part!r}")
+        if part in (".", ".."):
+            raise ValueError(f"Path traversal component not allowed: {part!r}")
+
+    # Re-build subpath from the validated parts only — this breaks taint propagation.
+    subpath = "/".join(subpath_parts)
+
+    # Determine skill name from the last validated path component (or repo name).
+    # Both candidates have already been confirmed safe by the loop/regex above.
+    skill_name = subpath_parts[-1] if subpath_parts else repo_name
+
+    # Final safety check — should always pass given the validation above.
+    if not _safe.match(skill_name):
+        raise ValueError(f"Derived skill name is not safe for filesystem use: {skill_name!r}")
+
+    settings = get_settings()
+    user_skills_dir = settings.data_dir / "user-skills"
+    user_skills_dir.mkdir(parents=True, exist_ok=True)
+    dest = user_skills_dir / skill_name
+
+    # Ensure dest is still within user_skills_dir (no traversal)
+    try:
+        dest.resolve().relative_to(user_skills_dir.resolve())
+    except ValueError:
+        raise ValueError(f"Skill name would escape user-skills directory: {skill_name!r}")
+
+    # Build the clone URL from the regex-validated owner and repo name only.
+    # Both variables are bound to group matches of [A-Za-z0-9_.\-]+ so they
+    # cannot contain shell metacharacters or path traversal sequences.
+    safe_owner = m.group(1)
+    safe_repo = m.group(2)
+    clone_url = f"https://github.com/{safe_owner}/{safe_repo}.git"
+
+    # Use a temp directory for the sparse clone
+    with tempfile.TemporaryDirectory(prefix="erebus-skill-") as tmpdir:
+        clone_dir = Path(tmpdir) / "repo"
+
+        # Initialise an empty repo and configure sparse-checkout
+        init_cmds: list[list[str]] = [
+            ["git", "init", str(clone_dir)],
+            ["git", "-C", str(clone_dir), "remote", "add", "origin", clone_url],
+            ["git", "-C", str(clone_dir), "config", "core.sparseCheckout", "true"],
+        ]
+        for cmd in init_cmds:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"git command failed: {' '.join(cmd)}\n{result.stderr}"
+                )
+
+        # Write the sparse-checkout pattern (subpath is already validated above)
+        sparse_file = clone_dir / ".git" / "info" / "sparse-checkout"
+        sparse_file.parent.mkdir(parents=True, exist_ok=True)
+        pattern_str = f"{subpath}/*\n" if subpath else "/*\n"
+        sparse_file.write_text(pattern_str)
+
+        # Pull the desired ref (or default branch).
+        # `ref` has been validated to contain only safe characters; pass as
+        # a separate argument so it is never interpreted as a shell flag.
+        fetch_cmd = ["git", "-C", str(clone_dir), "pull", "--depth", "1", "origin"]
+        if ref:
+            fetch_cmd.append(ref)
+        else:
+            fetch_cmd.append("HEAD")
+
+        result = subprocess.run(fetch_cmd, capture_output=True, text=True, timeout=120, check=False)
+        if result.returncode != 0:
+            # Try without specifying HEAD (let git pick the default branch)
+            fetch_cmd2 = ["git", "-C", str(clone_dir), "pull", "--depth", "1", "origin"]
+            result2 = subprocess.run(
+                fetch_cmd2, capture_output=True, text=True, timeout=120, check=False
+            )
+            if result2.returncode != 0:
+                raise RuntimeError(
+                    f"Failed to fetch {safe_owner}/{safe_repo}: {result.stderr or result2.stderr}"
+                )
+
+        # Locate the skill folder inside the clone.
+        # subpath is assembled only from parts validated to [A-Za-z0-9][A-Za-z0-9_.\-]*
+        # so it cannot contain traversal sequences.
+        source = (clone_dir / subpath).resolve() if subpath else clone_dir.resolve()
+
+        # Guard: resolved source must still be inside the temp clone dir.
+        try:
+            source.relative_to(clone_dir.resolve())
+        except ValueError:
+            raise RuntimeError("Resolved source path escapes clone directory.")
+
+        if not source.exists():
+            raise RuntimeError(
+                f"Path '{subpath}' not found in {safe_owner}/{safe_repo}. "
+                "Check that the URL points to an existing folder."
+            )
+
+        # Copy into user-skills, overwriting if it already exists
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(source, dest)
+        logger.info("Installed skill '%s' from %s to %s", skill_name, url, dest)
+
+    from erebus.skills.registry import refresh_registry
+
+    refresh_registry()
+    return dest
+
+
 def remove_github_skills(repo: str) -> bool:
     """Remove a cached GitHub skills repo.
 

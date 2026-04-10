@@ -22,6 +22,7 @@ from __future__ import annotations
 import importlib
 import json
 import pkgutil
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -188,6 +189,169 @@ def get_all_skill_tools():
             except Exception:
                 continue
     return toolkits
+
+
+def delete_user_skill(name: str) -> bool:
+    """Delete a user-created skill by name.
+
+    Searches ``~/.erebus/user-skills/`` and ``~/.erebus/skills/`` for a
+    directory or JSON file matching *name* and removes it.
+
+    Parameters
+    ----------
+    name:
+        Skill name (directory name or JSON base name).
+
+    Returns
+    -------
+    bool
+        True if the skill was found and deleted, False otherwise.
+    """
+    settings = get_settings()
+    deleted = False
+
+    # Check user-skills directory (SKILL.md format)
+    user_created_dir = settings.data_dir / "user-skills"
+    if user_created_dir.exists():
+        # Direct child: ~/.erebus/user-skills/<name>/
+        candidate = user_created_dir / name
+        if candidate.is_dir():
+            shutil.rmtree(candidate)
+            deleted = True
+        else:
+            # Search one level deeper (category/name)
+            for category_dir in user_created_dir.iterdir():
+                if category_dir.is_dir():
+                    sub = category_dir / name
+                    if sub.is_dir():
+                        shutil.rmtree(sub)
+                        deleted = True
+                        break
+
+    if not deleted:
+        # Legacy skills dir: JSON file or SKILL.md sub-dir
+        skills_dir = settings.data_dir / "skills"
+        if skills_dir.exists():
+            json_path = skills_dir / f"{name}.json"
+            if json_path.exists():
+                json_path.unlink()
+                deleted = True
+            else:
+                candidate = skills_dir / name
+                if candidate.is_dir():
+                    shutil.rmtree(candidate)
+                    deleted = True
+
+    if deleted:
+        refresh_registry()
+    return deleted
+
+
+def list_skill_files(name: str) -> list[dict[str, Any]] | None:
+    """Return a list of files for a user-created skill.
+
+    Parameters
+    ----------
+    name:
+        Skill name (directory name).
+
+    Returns
+    -------
+    list[dict] or None
+        Each entry has ``path`` (relative to skill dir) and ``size`` (bytes).
+        Returns ``None`` if the skill directory is not found, or an empty list
+        if the directory exists but contains no files.
+    """
+    settings = get_settings()
+    skill_dir: Path | None = None
+
+    user_created_dir = settings.data_dir / "user-skills"
+    if user_created_dir.exists():
+        candidate = user_created_dir / name
+        if candidate.is_dir():
+            skill_dir = candidate
+        else:
+            for category_dir in user_created_dir.iterdir():
+                if category_dir.is_dir():
+                    sub = category_dir / name
+                    if sub.is_dir():
+                        skill_dir = sub
+                        break
+
+    if skill_dir is None:
+        skills_dir = settings.data_dir / "skills"
+        if skills_dir.exists():
+            candidate = skills_dir / name
+            if candidate.is_dir():
+                skill_dir = candidate
+
+    if skill_dir is None:
+        return None
+
+    files: list[dict[str, Any]] = []
+    for p in sorted(skill_dir.rglob("*")):
+        if p.is_file():
+            files.append({
+                "path": str(p.relative_to(skill_dir)),
+                "size": p.stat().st_size,
+            })
+    return files
+
+
+def read_skill_file(name: str, file_path: str) -> str | None:
+    """Read the contents of a file inside a user-created skill directory.
+
+    Parameters
+    ----------
+    name:
+        Skill name.
+    file_path:
+        Relative path within the skill directory.
+
+    Returns
+    -------
+    str or None
+        File contents, or None if not found.
+    """
+    settings = get_settings()
+    skill_dir: Path | None = None
+
+    user_created_dir = settings.data_dir / "user-skills"
+    if user_created_dir.exists():
+        candidate = user_created_dir / name
+        if candidate.is_dir():
+            skill_dir = candidate
+        else:
+            for category_dir in user_created_dir.iterdir():
+                if category_dir.is_dir():
+                    sub = category_dir / name
+                    if sub.is_dir():
+                        skill_dir = sub
+                        break
+
+    if skill_dir is None:
+        skills_dir = settings.data_dir / "skills"
+        if skills_dir.exists():
+            candidate = skills_dir / name
+            if candidate.is_dir():
+                skill_dir = candidate
+
+    if skill_dir is None:
+        return None
+
+    target = (skill_dir / file_path).resolve()
+    # Security: ensure target is within skill_dir
+    try:
+        target.relative_to(skill_dir.resolve())
+    except ValueError:
+        return None
+
+    if not target.is_file():
+        return None
+    try:
+        return target.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
 
 
 def save_user_skill(name: str, description: str, code: str) -> Path:

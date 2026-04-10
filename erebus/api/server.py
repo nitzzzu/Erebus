@@ -77,6 +77,10 @@ class SkillCreateMdRequest(BaseModel):
     category: str = ""
 
 
+class SkillInstallRequest(BaseModel):
+    url: str
+
+
 class SkillCreateLegacyRequest(BaseModel):
     name: str
     description: str
@@ -388,6 +392,53 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
 
         path = save_user_skill(req.name, req.description, req.code)
         return {"saved": True, "path": str(path)}
+
+    @app.post("/api/skills/install")
+    async def install_skill(req: SkillInstallRequest):
+        """Install a skill from a GitHub folder URL (sparse checkout)."""
+        from erebus.skills.github_loader import install_skill_from_github_url
+
+        try:
+            dest = install_skill_from_github_url(req.url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        return {"installed": True, "path": str(dest)}
+
+    @app.delete("/api/skills/{name}")
+    async def delete_skill(name: str):
+        """Delete a user-created skill by name."""
+        from erebus.skills.registry import delete_user_skill
+
+        ok = delete_user_skill(name)
+        if not ok:
+            raise HTTPException(
+                status_code=404, detail=f"Skill '{name}' not found or not deletable"
+            )
+        return {"deleted": True}
+
+    @app.get("/api/skills/{name}/files")
+    async def list_skill_files(name: str):
+        """List files inside a user-created skill directory."""
+        from erebus.skills.registry import list_skill_files as _lsf
+
+        files = _lsf(name)
+        if files is None:
+            raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+        return {"skill": name, "files": files}
+
+    @app.get("/api/skills/{name}/file")
+    async def read_skill_file(name: str, path: str):
+        """Read a specific file inside a user-created skill directory."""
+        from erebus.skills.registry import read_skill_file as _rsf
+
+        content = _rsf(name, path)
+        if content is None:
+            raise HTTPException(
+                status_code=404, detail=f"File '{path}' not found in skill '{name}'"
+            )
+        return {"skill": name, "path": path, "content": content}
 
     # -- MCP Servers ---------------------------------------------------------
 
@@ -703,6 +754,75 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         if ws is None:
             return {"workspace": None}
         return {"workspace": ws.as_dict()}
+
+    @app.get("/api/workspaces/{name}/files")
+    async def list_workspace_files(name: str, path: str = ""):
+        """List files and directories in a workspace directory (file tree)."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        ws = mgr.get(name)
+        if ws is None:
+            raise HTTPException(status_code=404, detail=f"Workspace '{name}' not found")
+
+        base = ws.resolved_path
+        target = (base / path).resolve() if path else base
+        try:
+            target.relative_to(base)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Path traversal not allowed")
+
+        if not target.exists():
+            raise HTTPException(status_code=404, detail=f"Path '{path}' does not exist")
+        if not target.is_dir():
+            raise HTTPException(status_code=400, detail=f"Path '{path}' is not a directory")
+
+        entries = []
+        try:
+            for child in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+                rel = str(child.relative_to(base))
+                entries.append({
+                    "name": child.name,
+                    "path": rel,
+                    "type": "file" if child.is_file() else "directory",
+                    "size": child.stat().st_size if child.is_file() else None,
+                })
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+        return {"workspace": name, "path": path or ".", "entries": entries}
+
+    @app.get("/api/workspaces/{name}/file")
+    async def read_workspace_file(name: str, path: str):
+        """Read a file from a workspace. Returns content as text."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        ws = mgr.get(name)
+        if ws is None:
+            raise HTTPException(status_code=404, detail=f"Workspace '{name}' not found")
+
+        base = ws.resolved_path
+        target = (base / path).resolve()
+        try:
+            target.relative_to(base)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Path traversal not allowed")
+
+        if not target.exists():
+            raise HTTPException(status_code=404, detail=f"File '{path}' not found")
+        if not target.is_file():
+            raise HTTPException(status_code=400, detail=f"'{path}' is not a file")
+
+        # Refuse to stream very large files (>1 MB)
+        size = target.stat().st_size
+        if size > 1_048_576:
+            raise HTTPException(status_code=413, detail=f"File too large ({size} bytes). Max 1 MB.")
+
+        try:
+            content = target.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        return {"workspace": name, "path": path, "content": content, "size": size}
 
     return app
 
