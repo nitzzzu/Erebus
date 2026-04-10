@@ -184,14 +184,23 @@ def install_skill_from_github_url(url: str) -> Path:
         If the URL cannot be parsed as a GitHub folder URL.
     RuntimeError
         If the sparse checkout or copy operation fails.
+
+    Note
+    ----
+    Requires ``git`` to be installed and available on ``PATH``.
     """
     import re
     import tempfile
 
-    # Parse the GitHub URL
+    # Parse the GitHub URL using a linear (non-backtracking) pattern.
     # https://github.com/{owner}/{repo}/tree/{ref}/{path}
+    # Each captured segment is deliberately limited to avoid ReDoS.
     pattern = re.compile(
-        r"https?://github\.com/([^/]+)/([^/]+)(?:/tree/([^/]+)(?:/(.+))?)?/?$"
+        r"https?://github\.com"
+        r"/([A-Za-z0-9_.\-]+)"           # owner
+        r"/([A-Za-z0-9_.\-]+)"           # repo
+        r"(?:/tree/([A-Za-z0-9_.\-/]+))?"  # optional /tree/<ref>[/<path>]
+        r"/?$"
     )
     m = pattern.match(url.rstrip("/"))
     if not m:
@@ -200,23 +209,48 @@ def install_skill_from_github_url(url: str) -> Path:
             "Expected format: https://github.com/owner/repo/tree/branch/path/to/skill"
         )
 
-    owner, repo_name, ref, subpath = m.group(1), m.group(2), m.group(3), m.group(4)
-    repo_slug = f"{owner}/{repo_name}"
-    ref = ref or ""
-    subpath = subpath.strip("/") if subpath else ""
+    owner, repo_name, tree_part = m.group(1), m.group(2), m.group(3) or ""
+
+    # Split tree_part into ref and optional subpath.
+    # The ref is the first path segment; the rest is the subpath.
+    tree_parts = [p for p in tree_part.split("/") if p]
+    ref = tree_parts[0] if tree_parts else ""
+    subpath_parts = tree_parts[1:]
+
+    # Validate that ref and subpath parts only contain safe characters
+    _safe = re.compile(r"^[A-Za-z0-9_.\-]+$")
+    if ref and not _safe.match(ref):
+        raise ValueError(f"Unsafe git ref: {ref!r}")
+    for part in subpath_parts:
+        if not _safe.match(part):
+            raise ValueError(f"Unsafe path component: {part!r}")
+
+    subpath = "/".join(subpath_parts)
 
     # Determine skill name from the last component of subpath (or repo name)
-    skill_name = Path(subpath).name if subpath else repo_name
+    skill_name = subpath_parts[-1] if subpath_parts else repo_name
+
+    # Validate skill_name for safe filesystem use
+    if not _safe.match(skill_name):
+        raise ValueError(f"Derived skill name is not safe for filesystem use: {skill_name!r}")
 
     settings = get_settings()
     user_skills_dir = settings.data_dir / "user-skills"
     user_skills_dir.mkdir(parents=True, exist_ok=True)
     dest = user_skills_dir / skill_name
 
+    # Ensure dest is still within user_skills_dir (no traversal)
+    try:
+        dest.resolve().relative_to(user_skills_dir.resolve())
+    except ValueError:
+        raise ValueError(f"Skill name would escape user-skills directory: {skill_name!r}")
+
+    # Build the clone URL from validated owner/repo components only
+    clone_url = f"https://github.com/{owner}/{repo_name}.git"
+
     # Use a temp directory for the sparse clone
     with tempfile.TemporaryDirectory(prefix="erebus-skill-") as tmpdir:
         clone_dir = Path(tmpdir) / "repo"
-        clone_url = f"https://github.com/{repo_slug}.git"
 
         # Initialise an empty repo and configure sparse-checkout
         init_cmds: list[list[str]] = [
@@ -231,13 +265,15 @@ def install_skill_from_github_url(url: str) -> Path:
                     f"git command failed: {' '.join(cmd)}\n{result.stderr}"
                 )
 
-        # Write the sparse-checkout pattern
+        # Write the sparse-checkout pattern (subpath is already validated above)
         sparse_file = clone_dir / ".git" / "info" / "sparse-checkout"
         sparse_file.parent.mkdir(parents=True, exist_ok=True)
         pattern_str = f"{subpath}/*\n" if subpath else "/*\n"
         sparse_file.write_text(pattern_str)
 
-        # Pull the desired ref (or default branch)
+        # Pull the desired ref (or default branch).
+        # `ref` has been validated to contain only safe characters; pass as
+        # a separate argument so it is never interpreted as a shell flag.
         fetch_cmd = ["git", "-C", str(clone_dir), "pull", "--depth", "1", "origin"]
         if ref:
             fetch_cmd.append(ref)
@@ -253,22 +289,29 @@ def install_skill_from_github_url(url: str) -> Path:
             )
             if result2.returncode != 0:
                 raise RuntimeError(
-                    f"Failed to fetch {repo_slug}: {result.stderr or result2.stderr}"
+                    f"Failed to fetch {owner}/{repo_name}: {result.stderr or result2.stderr}"
                 )
 
-        # Locate the skill folder inside the clone
-        source = clone_dir / subpath if subpath else clone_dir
+        # Locate the skill folder inside the clone.
+        # subpath components were individually validated, so this join is safe.
+        source = (clone_dir / subpath).resolve() if subpath else clone_dir.resolve()
+
+        # Guard against any remaining path traversal
+        try:
+            source.relative_to(clone_dir.resolve())
+        except ValueError:
+            raise RuntimeError("Resolved source path escapes clone directory.")
 
         if not source.exists():
             raise RuntimeError(
-                f"Path '{subpath}' not found in {repo_slug}. "
+                f"Path '{subpath}' not found in {owner}/{repo_name}. "
                 "Check that the URL points to an existing folder."
             )
 
         # Copy into user-skills, overwriting if it already exists
         if dest.exists():
             shutil.rmtree(dest)
-        shutil.copytree(str(source), str(dest))
+        shutil.copytree(source, dest)
         logger.info("Installed skill '%s' from %s to %s", skill_name, url, dest)
 
     from erebus.skills.registry import refresh_registry

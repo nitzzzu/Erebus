@@ -424,7 +424,8 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         from erebus.skills.registry import list_skill_files as _lsf
 
         files = _lsf(name)
-        if files is None:
+        if not files:
+            # Empty list means skill not found or truly empty; treat as not found
             raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
         return {"skill": name, "files": files}
 

@@ -101,7 +101,8 @@ export default function SkillsPage() {
     try {
       const data = await listSkillFiles(name);
       setSkillFiles(data.files);
-    } catch {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to list files for skill '${name}'`);
       setSkillFiles([]);
     } finally {
       setFilesLoading(false);
@@ -120,8 +121,10 @@ export default function SkillsPage() {
     try {
       const data = await readSkillFile(skillName, filePath);
       setFileContent(data.content);
-    } catch {
-      setFileContent("(failed to load file)");
+    } catch (err) {
+      setFileContent(
+        `Error: ${err instanceof Error ? err.message : "failed to load file"}`
+      );
     } finally {
       setFileContentLoading(false);
     }

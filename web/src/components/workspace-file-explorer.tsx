@@ -42,12 +42,8 @@ export function WorkspaceFileExplorer({ workspaceName, onClose }: Props) {
 
   const loadDir = useCallback(
     async (dirPath = "") => {
-      try {
-        const data = await listWorkspaceFiles(workspaceName, dirPath);
-        return data.entries;
-      } catch {
-        return [] as WorkspaceEntry[];
-      }
+      const data = await listWorkspaceFiles(workspaceName, dirPath);
+      return data.entries;
     },
     [workspaceName]
   );
@@ -97,7 +93,13 @@ export function WorkspaceFileExplorer({ workspaceName, onClose }: Props) {
 
       // Load children if not yet loaded
       if (!node.loaded) {
-        const children = await loadDir(node.path);
+        let children: WorkspaceEntry[];
+        try {
+          children = await loadDir(node.path);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to load directory");
+          return;
+        }
         const childNodes: TreeNode[] = children.map((e) => ({
           name: e.name,
           path: e.path,
