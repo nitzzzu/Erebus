@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -87,9 +88,9 @@ func (s *Scheduler) registerCronEntry(entry Entry, execFn ExecFunc) {
 	if s.cronRunner == nil {
 		return
 	}
-	cronSpec := entry.Cron
+	cronSpec := strings.TrimSpace(entry.Cron)
 	// cron/v3 with WithSeconds() uses 6-field format; 5-field standard cron needs a seconds prefix
-	if len(splitFields(cronSpec)) == 5 {
+	if len(strings.Fields(cronSpec)) == 5 {
 		cronSpec = "0 " + cronSpec
 	}
 	eid, err := s.cronRunner.AddFunc(cronSpec, func() {
@@ -116,28 +117,6 @@ func (s *Scheduler) registerCronEntry(entry Entry, execFn ExecFunc) {
 		return
 	}
 	s.cronIDs[entry.ID] = eid
-}
-
-// splitFields splits a cron expression by whitespace to count fields.
-func splitFields(expr string) []string {
-	var fields []string
-	start := -1
-	for i, ch := range expr {
-		if ch == ' ' || ch == '\t' {
-			if start >= 0 {
-				fields = append(fields, expr[start:i])
-				start = -1
-			}
-		} else {
-			if start < 0 {
-				start = i
-			}
-		}
-	}
-	if start >= 0 {
-		fields = append(fields, expr[start:])
-	}
-	return fields
 }
 
 func (s *Scheduler) load() []Entry {

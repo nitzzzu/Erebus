@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -608,7 +609,7 @@ func loadContextFiles(dataDir string) string {
 	var parts []string
 
 	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
-		path := dataDir + "/" + name
+		path := filepath.Join(dataDir, name)
 		if data, err := os.ReadFile(path); err == nil {
 			parts = append(parts, string(data))
 			break
@@ -617,7 +618,7 @@ func loadContextFiles(dataDir string) string {
 
 	cwd, _ := os.Getwd()
 	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
-		path := cwd + "/" + name
+		path := filepath.Join(cwd, name)
 		if data, err := os.ReadFile(path); err == nil {
 			parts = append(parts, string(data))
 			break
