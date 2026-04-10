@@ -1,0 +1,151 @@
+// Package scheduler provides cron-based task scheduling with JSON persistence.
+package scheduler
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/robfig/cron/v3"
+)
+
+// Entry represents a single scheduled task.
+type Entry struct {
+	ID                  string         `json:"id"`
+	Name                string         `json:"name"`
+	Cron                string         `json:"cron"`
+	Description         string         `json:"description"`
+	Enabled             bool           `json:"enabled"`
+	Payload             map[string]any `json:"payload"`
+	Timezone            string         `json:"timezone"`
+	NotificationChannel *string        `json:"notification_channel"`
+	CreatedAt           string         `json:"created_at"`
+	LastRun             *string        `json:"last_run"`
+}
+
+// Scheduler manages cron schedules persisted as JSON.
+type Scheduler struct {
+	path    string
+	entries []Entry
+	mu      sync.RWMutex
+}
+
+// New creates a scheduler backed by schedules.json in the given data directory.
+func New(dataDir string) *Scheduler {
+	path := filepath.Join(dataDir, "schedules.json")
+	s := &Scheduler{path: path}
+	s.entries = s.load()
+	return s
+}
+
+func (s *Scheduler) load() []Entry {
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return nil
+	}
+	var entries []Entry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil
+	}
+	return entries
+}
+
+func (s *Scheduler) save() error {
+	data, err := json.MarshalIndent(s.entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	_ = os.MkdirAll(filepath.Dir(s.path), 0o755)
+	return os.WriteFile(s.path, data, 0o644)
+}
+
+// List returns all schedule entries.
+func (s *Scheduler) List() []Entry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]Entry, len(s.entries))
+	copy(result, s.entries)
+	return result
+}
+
+// Create adds a new schedule entry.
+func (s *Scheduler) Create(name, cronExpr, description string, payload map[string]any, tz string, notifChannel *string) (*Entry, error) {
+	// Validate cron expression
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	if _, err := parser.Parse(cronExpr); err != nil {
+		return nil, fmt.Errorf("invalid cron expression: %s", cronExpr)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entry := Entry{
+		ID:                  fmt.Sprintf("%x", time.Now().UnixNano())[:12],
+		Name:                name,
+		Cron:                cronExpr,
+		Description:         description,
+		Enabled:             true,
+		Payload:             payload,
+		Timezone:            tz,
+		NotificationChannel: notifChannel,
+		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
+	}
+	s.entries = append(s.entries, entry)
+	if err := s.save(); err != nil {
+		return nil, err
+	}
+	return &entry, nil
+}
+
+// Update modifies an existing schedule entry.
+func (s *Scheduler) Update(id string, updates map[string]any) (*Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, e := range s.entries {
+		if e.ID == id {
+			if v, ok := updates["name"].(string); ok {
+				s.entries[i].Name = v
+			}
+			if v, ok := updates["cron"].(string); ok {
+				parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+				if _, err := parser.Parse(v); err != nil {
+					return nil, fmt.Errorf("invalid cron expression: %s", v)
+				}
+				s.entries[i].Cron = v
+			}
+			if v, ok := updates["description"].(string); ok {
+				s.entries[i].Description = v
+			}
+			if v, ok := updates["enabled"].(bool); ok {
+				s.entries[i].Enabled = v
+			}
+			if v, ok := updates["timezone"].(string); ok {
+				s.entries[i].Timezone = v
+			}
+			if err := s.save(); err != nil {
+				return nil, err
+			}
+			return &s.entries[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// Delete removes a schedule entry by ID.
+func (s *Scheduler) Delete(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, e := range s.entries {
+		if e.ID == id {
+			s.entries = append(s.entries[:i], s.entries[i+1:]...)
+			_ = s.save()
+			return true
+		}
+	}
+	return false
+}

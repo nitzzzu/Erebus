@@ -1,6 +1,7 @@
 # ─── Erebus — Multi-stage Dockerfile ─────────────────────────────────────────
 # Stage 1: Build the Next.js web UI (static export)
-# Stage 2: Python runtime with the backend + pre-built frontend
+# Stage 2: Build ErebusLite (Go / Eino)
+# Stage 3: Python runtime with the backend + pre-built frontend + Go binary
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: Build web UI ────────────────────────────────────────────────────
@@ -16,7 +17,20 @@ RUN npm ci --ignore-scripts
 COPY web/ ./
 RUN npm run build
 
-# ── Stage 2: Python runtime ─────────────────────────────────────────────────
+# ── Stage 2: Build ErebusLite (Go) ──────────────────────────────────────────
+FROM golang:1.24-alpine AS go-builder
+
+WORKDIR /build/erebuslite
+
+# Copy go module files first (layer caching)
+COPY erebuslite/go.mod erebuslite/go.sum ./
+RUN go mod download
+
+# Copy source and build
+COPY erebuslite/ ./
+RUN CGO_ENABLED=0 go build -o /erebuslite ./cmd/main.go
+
+# ── Stage 3: Python runtime ─────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
 # Install system dependencies
@@ -41,6 +55,9 @@ RUN pip install --no-cache-dir -e ".[all]"
 
 # Copy the pre-built web UI from stage 1
 COPY --from=web-builder /build/web/out ./web/out
+
+# Copy ErebusLite binary from stage 2
+COPY --from=go-builder /erebuslite ./erebuslite
 
 # Create data directory
 RUN mkdir -p /data
