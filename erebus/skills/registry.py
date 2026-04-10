@@ -247,7 +247,7 @@ def delete_user_skill(name: str) -> bool:
     return deleted
 
 
-def list_skill_files(name: str) -> list[dict[str, Any]]:
+def list_skill_files(name: str) -> list[dict[str, Any]] | None:
     """Return a list of files for a user-created skill.
 
     Parameters
@@ -257,9 +257,10 @@ def list_skill_files(name: str) -> list[dict[str, Any]]:
 
     Returns
     -------
-    list[dict]
+    list[dict] or None
         Each entry has ``path`` (relative to skill dir) and ``size`` (bytes).
-        Returns an empty list if the skill is not found.
+        Returns ``None`` if the skill directory is not found, or an empty list
+        if the directory exists but contains no files.
     """
     settings = get_settings()
     skill_dir: Path | None = None
@@ -285,7 +286,7 @@ def list_skill_files(name: str) -> list[dict[str, Any]]:
                 skill_dir = candidate
 
     if skill_dir is None:
-        return []
+        return None
 
     files: list[dict[str, Any]] = []
     for p in sorted(skill_dir.rglob("*")):

@@ -209,26 +209,35 @@ def install_skill_from_github_url(url: str) -> Path:
             "Expected format: https://github.com/owner/repo/tree/branch/path/to/skill"
         )
 
-    owner, repo_name, tree_part = m.group(1), m.group(2), m.group(3) or ""
+    _tree_part = m.group(3) or ""
+    repo_name = m.group(2)
 
     # Split tree_part into ref and optional subpath.
     # The ref is the first path segment; the rest is the subpath.
-    tree_parts = [p for p in tree_part.split("/") if p]
+    tree_parts = [p for p in _tree_part.split("/") if p]
     ref = tree_parts[0] if tree_parts else ""
     subpath_parts = tree_parts[1:]
 
-    # Validate that ref and subpath parts only contain safe characters
-    _safe = re.compile(r"^[A-Za-z0-9_.\-]+$")
+    # Validate that ref and subpath parts contain only safe characters and
+    # start with an alphanumeric character (prevents flag-like or traversal values).
+    _safe = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]*$")
     if ref and not _safe.match(ref):
         raise ValueError(f"Unsafe git ref: {ref!r}")
     for part in subpath_parts:
         if not _safe.match(part):
             raise ValueError(f"Unsafe path component: {part!r}")
+        if part in (".", ".."):
+            raise ValueError(f"Path traversal component not allowed: {part!r}")
 
+    # Re-build subpath from the validated parts only — this breaks taint propagation.
     subpath = "/".join(subpath_parts)
 
-    # Determine skill name from the last component of subpath (or repo name)
-    skill_name = subpath_parts[-1] if subpath_parts else repo_name
+    # Determine skill name from the last validated path component (or repo name).
+    # Re-extract from the validated regex match to further break taint flow.
+    if subpath_parts:
+        skill_name = _safe.match(subpath_parts[-1]).group()  # type: ignore[union-attr]
+    else:
+        skill_name = _safe.match(repo_name).group()  # type: ignore[union-attr]
 
     # Validate skill_name for safe filesystem use
     if not _safe.match(skill_name):
@@ -245,8 +254,12 @@ def install_skill_from_github_url(url: str) -> Path:
     except ValueError:
         raise ValueError(f"Skill name would escape user-skills directory: {skill_name!r}")
 
-    # Build the clone URL from validated owner/repo components only
-    clone_url = f"https://github.com/{owner}/{repo_name}.git"
+    # Build the clone URL from the regex-validated owner and repo name only.
+    # Both variables are bound to group matches of [A-Za-z0-9_.\-]+ so they
+    # cannot contain shell metacharacters or path traversal sequences.
+    safe_owner = m.group(1)
+    safe_repo = m.group(2)
+    clone_url = f"https://github.com/{safe_owner}/{safe_repo}.git"
 
     # Use a temp directory for the sparse clone
     with tempfile.TemporaryDirectory(prefix="erebus-skill-") as tmpdir:
@@ -289,14 +302,15 @@ def install_skill_from_github_url(url: str) -> Path:
             )
             if result2.returncode != 0:
                 raise RuntimeError(
-                    f"Failed to fetch {owner}/{repo_name}: {result.stderr or result2.stderr}"
+                    f"Failed to fetch {safe_owner}/{safe_repo}: {result.stderr or result2.stderr}"
                 )
 
         # Locate the skill folder inside the clone.
-        # subpath components were individually validated, so this join is safe.
+        # subpath is assembled only from parts validated to [A-Za-z0-9][A-Za-z0-9_.\-]*
+        # so it cannot contain traversal sequences.
         source = (clone_dir / subpath).resolve() if subpath else clone_dir.resolve()
 
-        # Guard against any remaining path traversal
+        # Guard: resolved source must still be inside the temp clone dir.
         try:
             source.relative_to(clone_dir.resolve())
         except ValueError:
@@ -304,7 +318,7 @@ def install_skill_from_github_url(url: str) -> Path:
 
         if not source.exists():
             raise RuntimeError(
-                f"Path '{subpath}' not found in {owner}/{repo_name}. "
+                f"Path '{subpath}' not found in {safe_owner}/{safe_repo}. "
                 "Check that the URL points to an existing folder."
             )
 

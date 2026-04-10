@@ -30,11 +30,15 @@ export default function ChatPage() {
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
   useEffect(() => {
     listWorkspaces()
       .then((d) => setWorkspaces(d.workspaces as Workspace[]))
-      .catch(() => {});
+      .catch((err) => {
+        // Workspace loading is optional — show a non-blocking warning
+        setWorkspaceError(err instanceof Error ? err.message : "Failed to load workspaces");
+      });
   }, []);
 
   useEffect(() => {
@@ -85,6 +89,19 @@ export default function ChatPage() {
     <div className="flex h-full overflow-hidden">
       {/* Main chat column */}
       <div className="flex flex-1 flex-col min-w-0">
+        {/* Workspace loading error (non-blocking notice) */}
+        {workspaceError && (
+          <div className="flex items-center justify-between px-4 py-1.5 bg-destructive/10 text-destructive text-xs border-b border-destructive/20">
+            <span>Workspaces unavailable: {workspaceError}</span>
+            <button
+              className="ml-2 opacity-70 hover:opacity-100"
+              onClick={() => setWorkspaceError(null)}
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6 shrink-0">
           <div>
