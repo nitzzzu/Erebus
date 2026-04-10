@@ -4,6 +4,7 @@ package scheduler
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,6 +12,10 @@ import (
 
 	"github.com/robfig/cron/v3"
 )
+
+// ExecFunc is called when a schedule fires. It receives the schedule entry and
+// returns an optional response string (e.g. from the agent).
+type ExecFunc func(entry Entry) string
 
 // Entry represents a single scheduled task.
 type Entry struct {
@@ -31,14 +36,108 @@ type Scheduler struct {
 	path    string
 	entries []Entry
 	mu      sync.RWMutex
+
+	cronRunner *cron.Cron
+	cronIDs    map[string]cron.EntryID // schedule ID → cron entry ID
+	execFn     ExecFunc
 }
 
 // New creates a scheduler backed by schedules.json in the given data directory.
 func New(dataDir string) *Scheduler {
 	path := filepath.Join(dataDir, "schedules.json")
-	s := &Scheduler{path: path}
+	s := &Scheduler{
+		path:    path,
+		cronIDs: make(map[string]cron.EntryID),
+	}
 	s.entries = s.load()
 	return s
+}
+
+// Start begins the cron runner. Each enabled entry will fire execFn when triggered.
+// This must be called once after New().
+func (s *Scheduler) Start(execFn ExecFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.execFn = execFn
+	s.cronRunner = cron.New(cron.WithSeconds())
+
+	for _, entry := range s.entries {
+		if !entry.Enabled {
+			continue
+		}
+		s.registerCronEntry(entry, execFn)
+	}
+
+	s.cronRunner.Start()
+	log.Printf("Scheduler started with %d active entries", len(s.cronIDs))
+}
+
+// Stop halts the cron runner.
+func (s *Scheduler) Stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cronRunner != nil {
+		s.cronRunner.Stop()
+	}
+}
+
+// registerCronEntry adds an entry to the cron runner. Must be called with s.mu held.
+func (s *Scheduler) registerCronEntry(entry Entry, execFn ExecFunc) {
+	if s.cronRunner == nil {
+		return
+	}
+	cronSpec := entry.Cron
+	// cron/v3 with WithSeconds() uses 6-field format; 5-field standard cron needs a seconds prefix
+	if len(splitFields(cronSpec)) == 5 {
+		cronSpec = "0 " + cronSpec
+	}
+	eid, err := s.cronRunner.AddFunc(cronSpec, func() {
+		log.Printf("Scheduler: firing entry %q (%s)", entry.Name, entry.ID)
+		now := time.Now().UTC().Format(time.RFC3339)
+
+		// Update last_run on the stored entry
+		s.mu.Lock()
+		for i, e := range s.entries {
+			if e.ID == entry.ID {
+				s.entries[i].LastRun = &now
+				_ = s.save()
+				break
+			}
+		}
+		s.mu.Unlock()
+
+		if execFn != nil {
+			execFn(entry)
+		}
+	})
+	if err != nil {
+		log.Printf("Scheduler: failed to register cron entry %q: %v", entry.Name, err)
+		return
+	}
+	s.cronIDs[entry.ID] = eid
+}
+
+// splitFields splits a cron expression by whitespace to count fields.
+func splitFields(expr string) []string {
+	var fields []string
+	start := -1
+	for i, ch := range expr {
+		if ch == ' ' || ch == '\t' {
+			if start >= 0 {
+				fields = append(fields, expr[start:i])
+				start = -1
+			}
+		} else {
+			if start < 0 {
+				start = i
+			}
+		}
+	}
+	if start >= 0 {
+		fields = append(fields, expr[start:])
+	}
+	return fields
 }
 
 func (s *Scheduler) load() []Entry {
@@ -97,6 +196,12 @@ func (s *Scheduler) Create(name, cronExpr, description string, payload map[strin
 	if err := s.save(); err != nil {
 		return nil, err
 	}
+
+	// Register with live cron runner if started
+	if s.cronRunner != nil && s.execFn != nil {
+		s.registerCronEntry(entry, s.execFn)
+	}
+
 	return &entry, nil
 }
 
@@ -129,6 +234,18 @@ func (s *Scheduler) Update(id string, updates map[string]any) (*Entry, error) {
 			if err := s.save(); err != nil {
 				return nil, err
 			}
+
+			// Sync live cron runner: remove old entry and re-add if enabled
+			if s.cronRunner != nil && s.execFn != nil {
+				if cronID, ok := s.cronIDs[id]; ok {
+					s.cronRunner.Remove(cronID)
+					delete(s.cronIDs, id)
+				}
+				if s.entries[i].Enabled {
+					s.registerCronEntry(s.entries[i], s.execFn)
+				}
+			}
+
 			return &s.entries[i], nil
 		}
 	}
@@ -144,6 +261,13 @@ func (s *Scheduler) Delete(id string) bool {
 		if e.ID == id {
 			s.entries = append(s.entries[:i], s.entries[i+1:]...)
 			_ = s.save()
+			// Remove from live cron runner
+			if s.cronRunner != nil {
+				if cronID, ok := s.cronIDs[id]; ok {
+					s.cronRunner.Remove(cronID)
+					delete(s.cronIDs, id)
+				}
+			}
 			return true
 		}
 	}

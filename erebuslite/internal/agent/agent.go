@@ -16,6 +16,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 
 	"github.com/nitzzzu/Erebus/erebuslite/internal/config"
 	"github.com/nitzzzu/Erebus/erebuslite/internal/skills"
@@ -61,7 +62,8 @@ func (a *Agent) Run(ctx context.Context, message string, history []map[string]st
 		return "", fmt.Errorf("failed to create agent runner: %w", err)
 	}
 
-	iter := runner.Query(ctx, message)
+	messages := buildMessages(message, history)
+	iter := runner.Run(ctx, messages)
 	var sb strings.Builder
 	for {
 		event, ok := iter.Next()
@@ -96,7 +98,8 @@ func (a *Agent) RunStream(ctx context.Context, message string, history []map[str
 
 	events <- StreamEvent{Type: "run_started", Data: map[string]any{}}
 
-	iter := runner.Query(ctx, message)
+	messages := buildMessages(message, history)
+	iter := runner.Run(ctx, messages)
 	var fullContent strings.Builder
 
 	for {
@@ -349,6 +352,25 @@ type FileWriteInput struct {
 // SearchInput is the input for the web search tool.
 type SearchInput struct {
 	Query string `json:"query" jsonschema:"description=The search query"`
+}
+
+// buildMessages converts a session history and new user message into a slice of
+// schema.Message for the Eino runner.Run API. The runner prepends the system
+// instruction automatically, so we only include user/assistant turns here.
+func buildMessages(message string, history []map[string]string) []*schema.Message {
+	msgs := make([]*schema.Message, 0, len(history)+1)
+	for _, h := range history {
+		role := h["role"]
+		content := h["content"]
+		switch role {
+		case "user":
+			msgs = append(msgs, schema.UserMessage(content))
+		case "assistant":
+			msgs = append(msgs, schema.AssistantMessage(content, nil))
+		}
+	}
+	msgs = append(msgs, schema.UserMessage(message))
+	return msgs
 }
 
 func init() {

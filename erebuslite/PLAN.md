@@ -13,7 +13,7 @@
 - mcp-go v0.47.1 for MCP client connections
 - Standard library net/http for REST API (no external web framework)
 - BurntSushi/toml for config parsing
-- robfig/cron for schedule validation
+- robfig/cron for schedule validation and execution
 - yaml.v3 for SKILL.md frontmatter parsing
 
 ## Phases & Tasks
@@ -49,6 +49,13 @@
 - [x] README.md with usage, API reference, architecture
 - [x] CONTEXT.md with Eino API reference
 - [x] PLAN.md
+
+### Phase 7: Missing features (picoclaw-inspired)
+- [x] Session conversation history passed to agent via runner.Run(ctx, messages)
+- [x] Stream→session tracking: assistant responses saved back to session on stream done
+- [x] Context handler (/api/context) returns actual AGENTS.md/CLAUDE.md content
+- [x] Scheduler execution: cron jobs fire agent with entry description as task
+- [x] Heartbeat system: periodic HEARTBEAT.md task runner (Quick Tasks section)
 
 ## Risks
 - ⚠️ Eino ADK streaming may not provide token-level granularity like Agno

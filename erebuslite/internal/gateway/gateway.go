@@ -16,7 +16,9 @@ import (
 	"github.com/nitzzzu/Erebus/erebuslite/internal/agent"
 	"github.com/nitzzzu/Erebus/erebuslite/internal/api"
 	"github.com/nitzzzu/Erebus/erebuslite/internal/config"
+	"github.com/nitzzzu/Erebus/erebuslite/internal/heartbeat"
 	mcpkg "github.com/nitzzzu/Erebus/erebuslite/internal/mcp"
+	"github.com/nitzzzu/Erebus/erebuslite/internal/scheduler"
 	"github.com/nitzzzu/Erebus/erebuslite/internal/sessions"
 	"github.com/nitzzzu/Erebus/erebuslite/internal/skills"
 )
@@ -29,6 +31,7 @@ type Gateway struct {
 	apiSrv      *api.Server
 	webRoot     string
 	mcpCleanups []func()
+	ag          *agent.Agent
 }
 
 // New creates a new Gateway.
@@ -68,6 +71,7 @@ func New(cfg *config.Config) (*Gateway, error) {
 		apiSrv:      apiSrv,
 		webRoot:     webRoot,
 		mcpCleanups: mcpCleanups,
+		ag:          ag,
 	}, nil
 }
 
@@ -79,6 +83,34 @@ func (g *Gateway) Run(ctx context.Context, addr string) error {
 			cleanup()
 		}
 	}()
+
+	// Start scheduler with agent execution
+	sched := g.apiSrv.Scheduler()
+	sched.Start(func(entry scheduler.Entry) string {
+		task := entry.Description
+		if task == "" {
+			task = entry.Name
+		}
+		log.Printf("Scheduler: running task %q for entry %q", task, entry.Name)
+		result, err := g.ag.Run(ctx, task, nil)
+		if err != nil {
+			log.Printf("Scheduler: agent error for %q: %v", entry.Name, err)
+			return ""
+		}
+		return result
+	})
+	defer sched.Stop()
+
+	// Start heartbeat runner
+	hb := heartbeat.New(g.cfg.DataDir, 0, func(hbCtx context.Context, task string) string {
+		result, err := g.ag.Run(hbCtx, task, nil)
+		if err != nil {
+			log.Printf("Heartbeat: agent error for task %q: %v", task, err)
+			return ""
+		}
+		return result
+	})
+	go hb.Start(ctx)
 
 	mux := http.NewServeMux()
 

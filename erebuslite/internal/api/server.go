@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -33,20 +34,22 @@ type Server struct {
 	agent     *agent.Agent
 
 	// Active SSE streams
-	streams   map[string]chan agent.StreamEvent
-	streamsMu sync.RWMutex
+	streams       map[string]chan agent.StreamEvent
+	streamSessions map[string]string // streamID → sessionID
+	streamsMu     sync.RWMutex
 }
 
 // New creates a new API server with all routes registered.
 func New(cfg *config.Config, sessStore *sessions.Store, registry *skills.Registry, ag *agent.Agent) *Server {
 	s := &Server{
-		cfg:       cfg,
-		sessions:  sessStore,
-		skills:    registry,
-		scheduler: scheduler.New(cfg.DataDir),
-		notifs:    notifications.NewManager(cfg.DataDir),
-		agent:     ag,
-		streams:   make(map[string]chan agent.StreamEvent),
+		cfg:            cfg,
+		sessions:       sessStore,
+		skills:         registry,
+		scheduler:      scheduler.New(cfg.DataDir),
+		notifs:         notifications.NewManager(cfg.DataDir),
+		agent:          ag,
+		streams:        make(map[string]chan agent.StreamEvent),
+		streamSessions: make(map[string]string),
 	}
 
 	mux := http.NewServeMux()
@@ -120,6 +123,11 @@ func (s *Server) Handler() http.Handler {
 	return s
 }
 
+// Scheduler returns the server's scheduler instance for external lifecycle management.
+func (s *Server) Scheduler() *scheduler.Scheduler {
+	return s.scheduler
+}
+
 // ServeHTTP implements http.Handler with CORS support.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// CORS headers
@@ -188,8 +196,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		model = *req.Model
 	}
 
+	// Load session history for context
+	var history []map[string]string
+	if session, err := s.sessions.Load(req.SessionID); err == nil {
+		history = sessionMessagesToHistory(session.Messages)
+	}
+
 	ctx := r.Context()
-	content, err := s.agent.Run(ctx, req.Message, nil)
+	content, err := s.agent.Run(ctx, req.Message, history)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -234,6 +248,9 @@ func (s *Server) handleChatStart(w http.ResponseWriter, r *http.Request) {
 		session, _ = s.sessions.New(model, generateTitle(req.Message))
 	}
 
+	// Build history before appending the new user message
+	history := sessionMessagesToHistory(session.Messages)
+
 	// Append user message
 	session.Messages = append(session.Messages, sessions.Message{
 		Role:    "user",
@@ -241,18 +258,19 @@ func (s *Server) handleChatStart(w http.ResponseWriter, r *http.Request) {
 	})
 	_ = s.sessions.Save(session)
 
-	// Create stream
+	// Create stream and track session association
 	streamID := fmt.Sprintf("%x", time.Now().UnixNano())[:16]
 	eventCh := make(chan agent.StreamEvent, 100)
 
 	s.streamsMu.Lock()
 	s.streams[streamID] = eventCh
+	s.streamSessions[streamID] = session.SessionID
 	s.streamsMu.Unlock()
 
 	// Run agent in background
 	go func() {
 		ctx := context.Background()
-		s.agent.RunStream(ctx, req.Message, nil, eventCh)
+		s.agent.RunStream(ctx, req.Message, history, eventCh)
 	}()
 
 	writeJSON(w, 200, map[string]string{
@@ -293,7 +311,10 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		s.streamsMu.Lock()
 		delete(s.streams, streamID)
+		sessionID := s.streamSessions[streamID]
+		delete(s.streamSessions, streamID)
 		s.streamsMu.Unlock()
+		_ = sessionID // sessionID used in saveAssistantMessage via closure
 	}()
 
 	for {
@@ -312,7 +333,10 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 				// Save session with assistant response
 				if event.Type == "done" {
 					if content, ok := event.Data["content"].(string); ok {
-						s.saveAssistantMessage(streamID, content)
+						s.streamsMu.RLock()
+						sid := s.streamSessions[streamID]
+						s.streamsMu.RUnlock()
+						s.saveAssistantMessage(sid, content)
 					}
 				}
 				return
@@ -325,10 +349,19 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) saveAssistantMessage(streamID string, content string) {
-	// We don't have the session_id readily available here in a clean way,
-	// so we iterate all sessions to find the one with the last user message
-	// This is a simplification — in production you'd track stream→session mapping
+func (s *Server) saveAssistantMessage(sessionID string, content string) {
+	if sessionID == "" || content == "" {
+		return
+	}
+	session, err := s.sessions.Load(sessionID)
+	if err != nil {
+		return
+	}
+	session.Messages = append(session.Messages, sessions.Message{
+		Role:    "assistant",
+		Content: content,
+	})
+	_ = s.sessions.Save(session)
 }
 
 // ── Session Handlers ────────────────────────────────────────────────────────
@@ -565,10 +598,33 @@ func (s *Server) handleUpdateSoul(w http.ResponseWriter, r *http.Request) {
 // ── Context Handler ─────────────────────────────────────────────────────────
 
 func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
-	// Load AGENTS.md / CLAUDE.md content
-	content := ""
-	// This matches the Python implementation's _load_context_files
+	// Load AGENTS.md / CLAUDE.md from data dir and CWD
+	content := loadContextFiles(s.cfg.DataDir)
 	writeJSON(w, 200, map[string]string{"content": content})
+}
+
+// loadContextFiles loads AGENTS.md or CLAUDE.md from the data dir and CWD.
+func loadContextFiles(dataDir string) string {
+	var parts []string
+
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
+		path := dataDir + "/" + name
+		if data, err := os.ReadFile(path); err == nil {
+			parts = append(parts, string(data))
+			break
+		}
+	}
+
+	cwd, _ := os.Getwd()
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
+		path := cwd + "/" + name
+		if data, err := os.ReadFile(path); err == nil {
+			parts = append(parts, string(data))
+			break
+		}
+	}
+
+	return strings.Join(parts, "\n\n")
 }
 
 // ── Channels Handler ────────────────────────────────────────────────────────
@@ -705,4 +761,20 @@ func nilIfEmpty(s string) any {
 		return nil
 	}
 	return s
+}
+
+// sessionMessagesToHistory converts a session's messages to the history format
+// expected by the agent (slice of role/content maps).
+func sessionMessagesToHistory(msgs []sessions.Message) []map[string]string {
+	if len(msgs) == 0 {
+		return nil
+	}
+	history := make([]map[string]string, 0, len(msgs))
+	for _, m := range msgs {
+		history = append(history, map[string]string{
+			"role":    m.Role,
+			"content": m.Content,
+		})
+	}
+	return history
 }
