@@ -25,11 +25,18 @@ from erebus.gateway.channels.manager import ChannelManager
 
 logger = logging.getLogger(__name__)
 
+# Import version from package
+try:
+    from erebus import __version__ as _VERSION
+except ImportError:
+    _VERSION = "0.1.0"
+
 # Path to the Next.js static export (built into web/out/)
 _WEB_STATIC_DIR = Path(__file__).parent.parent.parent / "web" / "out"
 
-# Minimal onboarding HTML shown when the agent is not configured
-_ONBOARDING_HTML = """\
+# Minimal onboarding HTML template shown when the agent is not configured.
+# Use .format(version=_VERSION) before returning.
+_ONBOARDING_HTML_TEMPLATE = """\
 <!doctype html>
 <html lang="en">
 <head>
@@ -37,28 +44,28 @@ _ONBOARDING_HTML = """\
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Erebus — Setup</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #0a0a0a; color: #e5e5e5;
       display: flex; align-items: center; justify-content: center;
       min-height: 100vh; padding: 2rem;
-    }
-    .card {
+    }}
+    .card {{
       background: #171717; border: 1px solid #262626; border-radius: 12px;
       padding: 2.5rem; max-width: 540px; width: 100%;
-    }
-    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
-    .subtitle { color: #a3a3a3; margin-bottom: 1.5rem; }
-    .step { margin-bottom: 1rem; padding: 1rem; background: #1a1a2e;
-            border-radius: 8px; border-left: 3px solid #6366f1; }
-    .step h3 { font-size: 0.95rem; color: #818cf8; margin-bottom: 0.25rem; }
-    .step p { font-size: 0.875rem; color: #a3a3a3; }
-    code { background: #262626; padding: 0.15rem 0.4rem; border-radius: 4px;
-           font-size: 0.85rem; color: #c4b5fd; }
-    .footer { margin-top: 1.5rem; text-align: center; color: #525252;
-              font-size: 0.8rem; }
-    a { color: #818cf8; text-decoration: none; }
+    }}
+    h1 {{ font-size: 1.75rem; margin-bottom: 0.5rem; }}
+    .subtitle {{ color: #a3a3a3; margin-bottom: 1.5rem; }}
+    .step {{ margin-bottom: 1rem; padding: 1rem; background: #1a1a2e;
+            border-radius: 8px; border-left: 3px solid #6366f1; }}
+    .step h3 {{ font-size: 0.95rem; color: #818cf8; margin-bottom: 0.25rem; }}
+    .step p {{ font-size: 0.875rem; color: #a3a3a3; }}
+    code {{ background: #262626; padding: 0.15rem 0.4rem; border-radius: 4px;
+           font-size: 0.85rem; color: #c4b5fd; }}
+    .footer {{ margin-top: 1.5rem; text-align: center; color: #525252;
+              font-size: 0.8rem; }}
+    a {{ color: #818cf8; text-decoration: none; }}
   </style>
 </head>
 <body>
@@ -91,12 +98,15 @@ _ONBOARDING_HTML = """\
     </div>
 
     <div class="footer">
-      <p>Erebus v0.1.0 · <a href="https://github.com/nitzzzu/Erebus">GitHub</a></p>
+      <p>Erebus v{version} · <a href="https://github.com/nitzzzu/Erebus">GitHub</a></p>
     </div>
   </div>
 </body>
 </html>
 """
+
+# Pre-render the onboarding HTML with the current version
+_ONBOARDING_HTML = _ONBOARDING_HTML_TEMPLATE.format(version=_VERSION)
 
 
 def _is_agent_configured(settings: ErebusSettings) -> bool:
@@ -144,7 +154,7 @@ def create_gateway_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
     async def gateway_health():
         return {
             "status": "ok",
-            "version": "0.1.0",
+            "version": _VERSION,
             "gateway": True,
             "agent_configured": _is_agent_configured(settings),
             "channels": channel_manager.status_all(),
@@ -154,39 +164,42 @@ def create_gateway_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
     has_web_ui = _WEB_STATIC_DIR.is_dir() and (_WEB_STATIC_DIR / "index.html").is_file()
 
     if has_web_ui:
+        static_root = _WEB_STATIC_DIR.resolve()
+
+        def _safe_resolve(subpath: str) -> Path | None:
+            """Resolve a subpath within the static dir, returning None if it escapes."""
+            # Reject obvious traversal attempts
+            if ".." in subpath.split("/"):
+                return None
+            candidate = (static_root / subpath).resolve()
+            if not str(candidate).startswith(str(static_root)):
+                return None
+            return candidate
+
         # Serve the Next.js static export with SPA fallback
         @app.get("/{full_path:path}")
         async def serve_spa(request: Request, full_path: str):
             """Serve the Next.js static export with SPA fallback."""
-            # Sanitize path to prevent directory traversal
-            resolved = (_WEB_STATIC_DIR / full_path).resolve()
-            if not str(resolved).startswith(str(_WEB_STATIC_DIR.resolve())):
+            safe = _safe_resolve(full_path)
+            if safe is None:
                 return JSONResponse({"error": "forbidden"}, status_code=403)
 
             # Try exact file
-            if resolved.is_file():
+            if safe.is_file():
                 return None  # Let StaticFiles handle it
 
             # Try path.html (Next.js static export pattern)
-            html_resolved = (_WEB_STATIC_DIR / f"{full_path.rstrip('/')}.html").resolve()
-            if (
-                str(html_resolved).startswith(str(_WEB_STATIC_DIR.resolve()))
-                and html_resolved.is_file()
-            ):
-                return HTMLResponse(html_resolved.read_text(encoding="utf-8"))
+            html_safe = _safe_resolve(f"{full_path.rstrip('/')}.html")
+            if html_safe is not None and html_safe.is_file():
+                return HTMLResponse(html_safe.read_text(encoding="utf-8"))
 
             # Try path/index.html
-            index_resolved = (
-                _WEB_STATIC_DIR / full_path.rstrip("/") / "index.html"
-            ).resolve()
-            if (
-                str(index_resolved).startswith(str(_WEB_STATIC_DIR.resolve()))
-                and index_resolved.is_file()
-            ):
-                return HTMLResponse(index_resolved.read_text(encoding="utf-8"))
+            index_safe = _safe_resolve(f"{full_path.rstrip('/')}/index.html")
+            if index_safe is not None and index_safe.is_file():
+                return HTMLResponse(index_safe.read_text(encoding="utf-8"))
 
             # SPA fallback: serve root index.html
-            root_index = _WEB_STATIC_DIR / "index.html"
+            root_index = static_root / "index.html"
             if root_index.is_file():
                 return HTMLResponse(root_index.read_text(encoding="utf-8"))
             return JSONResponse({"error": "not found"}, status_code=404)

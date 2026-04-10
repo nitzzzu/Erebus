@@ -71,18 +71,18 @@ def sync_github_repo(
             cmd = ["git", "-C", str(local_path), "pull", "--ff-only"]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
             if result.returncode != 0:
-                logger.warning(
-                    "Failed to sync %s: %s", repo, result.stderr.strip() or result.stdout.strip()
-                )
+                err = result.stderr.strip() or result.stdout.strip() or "unknown error"
+                logger.warning("Failed to sync %s: %s", repo, err)
         except Exception:
             logger.warning("Failed to sync %s — using cached version", repo)
     else:
         # Fresh clone
         logger.info("Cloning GitHub skills repo: %s", repo)
         local_path.parent.mkdir(parents=True, exist_ok=True)
-        cmd = ["git", "clone", "--depth", "1", url, str(local_path)]
+        cmd = ["git", "clone", "--depth", "1"]
         if ref:
-            cmd = ["git", "clone", "--depth", "1", "--branch", ref, url, str(local_path)]
+            cmd.extend(["--branch", ref])
+        cmd.extend([url, str(local_path)])
         try:
             subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=True)
         except subprocess.CalledProcessError as exc:
