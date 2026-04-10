@@ -29,7 +29,8 @@ dependencies = [
 [project.optional-dependencies]
 telegram = ["agno[telegram]"]
 teams = ["botbuilder-core>=4.16.0", "botbuilder-integration-aiohttp>=4.16.0"]
-all = ["erebus[telegram]", "erebus[teams]"]
+auth = ["authlib>=1.6.9", "itsdangerous>=2.2.0"]
+all = ["erebus[telegram]", "erebus[teams]", "erebus[auth]"]
 dev = ["pytest>=8.0", "ruff>=0.7.0"]
 
 [project.scripts]

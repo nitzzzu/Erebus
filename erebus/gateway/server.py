@@ -135,6 +135,17 @@ def create_gateway_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
 
     app = create_api_app(settings)
 
+    # ── 0. Authentication (optional) ─────────────────────────────────────────
+    if settings.auth_enabled:
+        from erebus.auth.middleware import AuthMiddleware, build_auth_components
+
+        middleware_kwargs, auth_router = build_auth_components(settings)
+        if auth_router is not None:
+            app.include_router(auth_router)
+        if middleware_kwargs is not None:
+            app.add_middleware(AuthMiddleware, **middleware_kwargs)
+        logger.info("Auth middleware enabled (provider: %s)", settings.auth_provider)
+
     # ── 1. Mount configured messaging channels ──────────────────────────────
     channel_manager = ChannelManager(settings)
     channel_manager.mount_all(app)

@@ -1,5 +1,25 @@
 # ⚡ Erebus
 
+```
+ ▓█████  ██▀███  ▓█████  ▄▄▄▄    █    ██   ██████
+ ▓█   ▀ ▓██ ▒ ██▒▓█   ▀ ▓█████▄  ██  ▓██▒▒██    ▒
+ ▒███   ▓██ ░▄█ ▒▒███   ▒██▒ ▄██▓██  ▒██░░ ▓██▄
+ ▒▓█  ▄ ▒██▀▀█▄  ▒▓█  ▄ ▒██░█▀  ▓▓█  ░██░  ▒   ██▒
+ ░▒████▒░██▓ ▒██▒░▒████▒░▓█  ▀█▓▒▒█████▓ ▒██████▒▒
+ ░░ ▒░ ░░ ▒▓ ░▒▓░░░ ▒░ ░░▒▓███▀▒░▒▓▒ ▒ ▒ ▒ ▒▓▒ ▒ ░
+  ░ ░  ░  ░▒ ░ ▒░ ░ ░  ░▒░▒   ░ ░░▒░ ░ ░ ░ ░▒  ░ ░
+    ░     ░░   ░    ░    ░    ░  ░░░ ░ ░ ░  ░  ░
+    ░  ░   ░        ░  ░ ░        ░           ░
+
+          ~ Primordial God of the Deep Dark ~
+   ──────────────────────────────────────────────
+    "From the void before creation, I emerged.
+     From chaos, I forged order. From darkness,
+     I brought the light of intelligence."
+   ──────────────────────────────────────────────
+         ⚡ Powered by Agno · Built for Gods ⚡
+```
+
 **The ultimate AI agent** — combining the [Agno](https://docs.agno.com) framework with [Hermes Agent](https://github.com/NousResearch/hermes-agent)–style skills, MCP integration, agentic memory, cron scheduling, soul/personality, multi-model support, and multi-channel messaging.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -14,12 +34,14 @@
 |---------|-------------|
 | **Unified Gateway** | Single process serves API, web UI, Telegram, and Teams — `erebus gateway` |
 | **Docker Support** | Multi-stage Dockerfile + Docker Compose for one-command deployment |
+| **CI/CD** | GitHub Actions workflow — manual trigger or push a `v*` tag to publish to GHCR |
 | **47 Skills** | Hermes-style SKILL.md skills organized in 17 categories — research, coding, creative, productivity, DevOps, and more |
 | **GitHub Skills** | Load and sync skills directly from GitHub repositories |
 | **MCP Integration** | Connect to any Model Context Protocol server (stdio, SSE, HTTP) via config file |
 | **Multi-Model** | Switch between any LLM provider with `provider:model_id` syntax — OpenAI, Anthropic, Google, OpenRouter, Ollama, and more |
 | **TOML/JSON Config** | Agent configuration via `erebus.toml` or `erebus.json` — models, skills, MCP servers, and more |
 | **Recursive Skill Loader** | Hermes-style nested directory skill discovery from folders and subfolders |
+| **Learning Machine** | Agno Learning Machine — agent captures user profiles, memories and cross-session knowledge automatically |
 | **Agentic Memory** | Agent-curated persistent memory per user via Agno MemoryManager + SQLite |
 | **Session Storage** | Conversation history persisted across sessions |
 | **Cron Scheduler** | Natural-language–described cron jobs with timezone support and delivery to any channel |
@@ -27,6 +49,8 @@
 | **Telegram Bot** | Full Telegram integration via Agno's built-in Telegram interface |
 | **Microsoft Teams** | Teams bot via Bot Framework SDK |
 | **Web UI** | Next.js + Shadcn dashboard with chat, memory, skills, schedules, soul, channels, and settings |
+| **Auth — GitHub OAuth** | Protect the Web UI and API with GitHub OAuth 2.0 — optional allowlist per user |
+| **Auth — Authelia** | Drop Erebus behind an Authelia forward-auth proxy with zero code changes |
 | **Rich CLI** | Interactive terminal with panels, tables, spinners, markdown rendering, and syntax highlighting |
 | **REST API** | FastAPI backend powering both the CLI and web UI |
 | **External Skills** | Load custom skills from any directory — share skills across projects |
@@ -445,7 +469,70 @@ Edit via the Web UI's Soul page or through the API.
 | `/api/settings` | PUT | Update settings |
 | `/api/health` | GET | Health check |
 
+| `/api/auth/me` | GET | Current authenticated user |
+| `/auth/login` | GET | Initiate GitHub OAuth login |
+| `/auth/callback` | GET | GitHub OAuth callback |
+| `/auth/logout` | GET | Clear session and redirect to `/` |
+
 ---
+
+## Authentication
+
+Erebus ships with optional authentication middleware. When enabled, all routes except `/api/health` and `/auth/*` require a valid session.
+
+### GitHub OAuth
+
+1. [Create a GitHub OAuth App](https://github.com/settings/developers) with callback URL `http://your-host/auth/callback`.
+2. Set environment variables:
+
+```env
+EREBUS_AUTH_ENABLED=true
+EREBUS_AUTH_PROVIDER=github
+EREBUS_GITHUB_CLIENT_ID=<client-id>
+EREBUS_GITHUB_CLIENT_SECRET=<client-secret>
+EREBUS_GITHUB_ALLOWED_LOGINS=alice,bob   # optional — empty = allow all GitHub users
+EREBUS_SECRET_KEY=<openssl rand -hex 32>
+```
+
+3. Restart Erebus — unauthenticated visitors are redirected to GitHub for login.
+
+### Authelia (Forward Auth)
+
+Configure Authelia as a forward-auth proxy in front of Erebus (Traefik, Nginx, Caddy). Authelia sets `Remote-User` and `Remote-Name` headers on authenticated requests.
+
+```env
+EREBUS_AUTH_ENABLED=true
+EREBUS_AUTH_PROVIDER=authelia
+# Optional: override the header names if your Authelia config differs
+EREBUS_AUTHELIA_HEADER_USER=Remote-User
+EREBUS_AUTHELIA_HEADER_NAME=Remote-Name
+```
+
+Erebus trusts those headers completely — no session cookie is issued. The reverse proxy is responsible for authentication.
+
+---
+
+## CI/CD — Docker Image
+
+The included GitHub Actions workflow (`.github/workflows/docker.yml`) publishes the Docker image to GitHub Container Registry (`ghcr.io`).
+
+**Triggers:**
+
+| Trigger | Tags produced |
+|---------|--------------|
+| Push `v*` tag (e.g. `v1.0.0`) | `<sha6>`, `latest`, `v1.0.0` |
+| Manual `workflow_dispatch` | `<sha6>`, `latest`, optional custom tag |
+
+**Pull the image:**
+
+```bash
+docker pull ghcr.io/nitzzzu/erebus:latest
+# or pin to a specific commit
+docker pull ghcr.io/nitzzzu/erebus:a1b2c3
+```
+
+---
+
 
 ## Development
 
