@@ -29,6 +29,12 @@ name = "Erebus"
 # Disable specific skills by name
 # disabled = ["red-teaming", "godmode"]
 
+# Load skills from GitHub repositories (auto-synced)
+# [[skills.github]]
+# repo = "owner/repo"
+# path = "skills"           # subdirectory within the repo (default: root)
+# ref = "main"              # branch/tag/commit (default: repo default branch)
+
 
 [mcp]
 # MCP (Model Context Protocol) server configurations

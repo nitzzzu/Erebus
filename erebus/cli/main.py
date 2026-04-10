@@ -181,6 +181,24 @@ def interactive_chat() -> None:
         console.print()
 
 
+def serve_gateway() -> None:
+    """Start the unified Erebus gateway (API + channels + web UI)."""
+    import uvicorn
+
+    from erebus.gateway.server import create_gateway_app
+
+    settings = get_settings()
+    app = create_gateway_app(settings)
+    print_info(f"Starting Erebus Gateway on {settings.api_host}:{settings.api_port}")
+    print_info("  API:  /api/")
+    if settings.telegram_token:
+        print_info("  Telegram: /telegram/webhook")
+    if settings.teams_app_id:
+        print_info("  Teams: /api/messages")
+    print_info("  Web UI: /")
+    uvicorn.run(app, host=settings.api_host, port=settings.api_port)
+
+
 def serve_api() -> None:
     """Start the FastAPI REST API server."""
     import uvicorn
@@ -201,6 +219,8 @@ def app() -> None:
         interactive_chat()
     elif args[0] == "serve":
         serve_api()
+    elif args[0] == "gateway":
+        serve_gateway()
     elif args[0] == "telegram":
         _run_telegram()
     elif args[0] == "teams":
@@ -211,7 +231,7 @@ def app() -> None:
         print_info(f"Erebus v{__version__}")
     else:
         print_error(f"Unknown command: {args[0]}")
-        print_info("Usage: erebus [chat|serve|telegram|teams|version]")
+        print_info("Usage: erebus [chat|serve|gateway|telegram|teams|version]")
         sys.exit(1)
 
 

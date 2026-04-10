@@ -95,6 +95,15 @@ def _build_skills(settings: ErebusSettings) -> "Skills":
         if p.is_dir():
             skill_dirs.append(p)
 
+    # GitHub-synced skills
+    try:
+        from erebus.skills.github_loader import sync_all_github_skills
+
+        github_dirs = sync_all_github_skills(skills_config)
+        skill_dirs.extend(github_dirs)
+    except Exception:
+        logger.debug("GitHub skills sync skipped (git not available or config missing)")
+
     return build_skills_from_dirs(*skill_dirs)
 
 
