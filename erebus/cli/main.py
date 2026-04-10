@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import sys
 
+from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.text import Text
 
 from erebus.cli.console import (
     console,
@@ -133,6 +135,60 @@ def _handle_slash_command(command: str, agent, settings) -> bool:
     return False
 
 
+def _run_with_tool_display(agent, user_input: str, session_id: str) -> str:
+    """Run the agent with streaming, rendering tool calls/results as Rich panels."""
+    from agno.run.agent import RunEvent
+
+    content = ""
+    spinner = console.status("[dim]Thinking…[/dim]", spinner="dots")
+    spinner.start()
+    try:
+        for chunk in agent.run(user_input, session_id=session_id, stream=True, stream_events=True):
+            event = getattr(chunk, "event", None)
+
+            if event == RunEvent.tool_call_started.value:
+                spinner.stop()
+                tool = chunk.tool
+                name = tool.tool_name if tool else "unknown"
+                args = tool.tool_args or {}
+                parts = ", ".join(f"{k}={repr(v)}" for k, v in args.items())
+                console.print(
+                    Panel(
+                        Text(f"{name}({parts})", style="bold yellow"),
+                        title="[yellow]Tool call[/yellow]",
+                        border_style="yellow",
+                        expand=False,
+                    )
+                )
+                spinner.start()
+
+            elif event == RunEvent.tool_call_completed.value:
+                spinner.stop()
+                tool = chunk.tool
+                name = tool.tool_name if tool else "unknown"
+                result = str(tool.result) if (tool and tool.result is not None) else "(no result)"
+                truncated = len(result) > 2000
+                preview = result[:2000] + ("\n[dim]…(truncated)[/dim]" if truncated else "")
+                console.print(
+                    Panel(
+                        preview,
+                        title=f"[dim]Result: {name}[/dim]",
+                        border_style="dim",
+                        expand=False,
+                    )
+                )
+                spinner.start()
+
+            elif event == RunEvent.run_content.value:
+                text = chunk.content or ""
+                if text:
+                    content += text
+    finally:
+        spinner.stop()
+
+    return content or "(no response)"
+
+
 def interactive_chat() -> None:
     """Run the interactive Rich-powered chat REPL."""
     settings = get_settings()
@@ -169,13 +225,11 @@ def interactive_chat() -> None:
                 break
             continue
 
-        with status_spinner("Thinking…"):
-            try:
-                response = agent.run(user_input, session_id=session_id, stream=False)
-                content = response.content if hasattr(response, "content") else str(response)
-            except Exception as exc:
-                print_error(f"Agent error: {exc}")
-                continue
+        try:
+            content = _run_with_tool_display(agent, user_input, session_id)
+        except Exception as exc:
+            print_error(f"Agent error: {exc}")
+            continue
 
         print_panel(content, title="Erebus", subtitle=settings.default_model)
         console.print()
