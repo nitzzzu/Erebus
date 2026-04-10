@@ -186,6 +186,31 @@ export function createSkill(name: string, description: string, code: string) {
   });
 }
 
+export function installSkillFromGitHub(url: string) {
+  return request<{ installed: boolean; path: string }>("/api/skills/install", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+export function deleteSkill(name: string) {
+  return request<{ deleted: boolean }>(`/api/skills/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+}
+
+export function listSkillFiles(name: string) {
+  return request<{ skill: string; files: { path: string; size: number }[] }>(
+    `/api/skills/${encodeURIComponent(name)}/files`
+  );
+}
+
+export function readSkillFile(name: string, path: string) {
+  return request<{ skill: string; path: string; content: string }>(
+    `/api/skills/${encodeURIComponent(name)}/file?path=${encodeURIComponent(path)}`
+  );
+}
+
 // ── Schedules ─────────────────────────────────────────────────────────────
 
 export function listSchedules() {
@@ -255,4 +280,37 @@ export function updateSettings(data: Partial<Settings>) {
 
 export function healthCheck() {
   return request<{ status: string; version: string }>("/api/health");
+}
+
+// ── Workspaces file browser ────────────────────────────────────────────────
+
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size: number | null;
+}
+
+export interface Workspace {
+  name: string;
+  path: string;
+  description: string;
+  created_at: number;
+}
+
+export function listWorkspaces() {
+  return request<{ workspaces: Workspace[] }>("/api/workspaces");
+}
+
+export function listWorkspaceFiles(workspaceName: string, path = "") {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+  return request<{ workspace: string; path: string; entries: WorkspaceEntry[] }>(
+    `/api/workspaces/${encodeURIComponent(workspaceName)}/files${qs}`
+  );
+}
+
+export function readWorkspaceFile(workspaceName: string, path: string) {
+  return request<{ workspace: string; path: string; content: string; size: number }>(
+    `/api/workspaces/${encodeURIComponent(workspaceName)}/file?path=${encodeURIComponent(path)}`
+  );
 }

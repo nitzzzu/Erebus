@@ -158,6 +158,125 @@ def sync_all_github_skills(config: dict[str, Any] | None = None) -> list[Path]:
     return paths
 
 
+def install_skill_from_github_url(url: str) -> Path:
+    """Install a skill from a GitHub folder URL using sparse checkout.
+
+    Accepts URLs in these formats:
+      - ``https://github.com/owner/repo/tree/branch/path/to/skill``
+      - ``https://github.com/owner/repo`` (root of repo)
+
+    The skill folder is copied into ``~/.erebus/user-skills/`` so the
+    agent picks it up on the next registry refresh.
+
+    Parameters
+    ----------
+    url:
+        GitHub URL pointing to a skill folder.
+
+    Returns
+    -------
+    Path
+        The installed skill directory under ``~/.erebus/user-skills/``.
+
+    Raises
+    ------
+    ValueError
+        If the URL cannot be parsed as a GitHub folder URL.
+    RuntimeError
+        If the sparse checkout or copy operation fails.
+    """
+    import re
+    import tempfile
+
+    # Parse the GitHub URL
+    # https://github.com/{owner}/{repo}/tree/{ref}/{path}
+    pattern = re.compile(
+        r"https?://github\.com/([^/]+)/([^/]+)(?:/tree/([^/]+)(?:/(.+))?)?/?$"
+    )
+    m = pattern.match(url.rstrip("/"))
+    if not m:
+        raise ValueError(
+            f"Cannot parse GitHub URL: {url!r}. "
+            "Expected format: https://github.com/owner/repo/tree/branch/path/to/skill"
+        )
+
+    owner, repo_name, ref, subpath = m.group(1), m.group(2), m.group(3), m.group(4)
+    repo_slug = f"{owner}/{repo_name}"
+    ref = ref or ""
+    subpath = subpath.strip("/") if subpath else ""
+
+    # Determine skill name from the last component of subpath (or repo name)
+    skill_name = Path(subpath).name if subpath else repo_name
+
+    settings = get_settings()
+    user_skills_dir = settings.data_dir / "user-skills"
+    user_skills_dir.mkdir(parents=True, exist_ok=True)
+    dest = user_skills_dir / skill_name
+
+    # Use a temp directory for the sparse clone
+    with tempfile.TemporaryDirectory(prefix="erebus-skill-") as tmpdir:
+        clone_dir = Path(tmpdir) / "repo"
+        clone_url = f"https://github.com/{repo_slug}.git"
+
+        # Initialise an empty repo and configure sparse-checkout
+        init_cmds: list[list[str]] = [
+            ["git", "init", str(clone_dir)],
+            ["git", "-C", str(clone_dir), "remote", "add", "origin", clone_url],
+            ["git", "-C", str(clone_dir), "config", "core.sparseCheckout", "true"],
+        ]
+        for cmd in init_cmds:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"git command failed: {' '.join(cmd)}\n{result.stderr}"
+                )
+
+        # Write the sparse-checkout pattern
+        sparse_file = clone_dir / ".git" / "info" / "sparse-checkout"
+        sparse_file.parent.mkdir(parents=True, exist_ok=True)
+        pattern_str = f"{subpath}/*\n" if subpath else "/*\n"
+        sparse_file.write_text(pattern_str)
+
+        # Pull the desired ref (or default branch)
+        fetch_cmd = ["git", "-C", str(clone_dir), "pull", "--depth", "1", "origin"]
+        if ref:
+            fetch_cmd.append(ref)
+        else:
+            fetch_cmd.append("HEAD")
+
+        result = subprocess.run(fetch_cmd, capture_output=True, text=True, timeout=120, check=False)
+        if result.returncode != 0:
+            # Try without specifying HEAD (let git pick the default branch)
+            fetch_cmd2 = ["git", "-C", str(clone_dir), "pull", "--depth", "1", "origin"]
+            result2 = subprocess.run(
+                fetch_cmd2, capture_output=True, text=True, timeout=120, check=False
+            )
+            if result2.returncode != 0:
+                raise RuntimeError(
+                    f"Failed to fetch {repo_slug}: {result.stderr or result2.stderr}"
+                )
+
+        # Locate the skill folder inside the clone
+        source = clone_dir / subpath if subpath else clone_dir
+
+        if not source.exists():
+            raise RuntimeError(
+                f"Path '{subpath}' not found in {repo_slug}. "
+                "Check that the URL points to an existing folder."
+            )
+
+        # Copy into user-skills, overwriting if it already exists
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(str(source), str(dest))
+        logger.info("Installed skill '%s' from %s to %s", skill_name, url, dest)
+
+    from erebus.skills.registry import refresh_registry
+
+    refresh_registry()
+    return dest
+
+
 def remove_github_skills(repo: str) -> bool:
     """Remove a cached GitHub skills repo.
 
