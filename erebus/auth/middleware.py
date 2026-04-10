@@ -36,7 +36,6 @@ import hmac
 import html
 import json
 import logging
-import os
 import time
 from typing import Awaitable, Callable
 from urllib.parse import urlencode
@@ -97,7 +96,9 @@ def _decode_session_cookie(secret: bytes, value: str) -> dict | None:
         return None
 
 
-# ── GitHub OAuth helpers ─────────────────────────────────────────────────────
+def _check_allowlist(allowed: set[str], login: str) -> bool:
+    """Return True if *login* is permitted (empty allowlist = allow all)."""
+    return not allowed or login in allowed
 
 _GH_AUTH_URL = "https://github.com/login/oauth/authorize"
 _GH_TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -210,7 +211,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         if user:
             # Validate allowlist (if configured)
-            if self.github_allowed_logins and user.get("login") not in self.github_allowed_logins:
+            if not _check_allowlist(self.github_allowed_logins, user.get("login", "")):
                 return HTMLResponse(
                     "<h1>403 Forbidden</h1><p>Your account is not allowed.</p>", 403
                 )
@@ -280,7 +281,7 @@ def create_auth_router(
             return HTMLResponse("<h1>Authentication failed</h1><p>Could not fetch user.</p>", 401)
 
         login = gh_user.get("login", "")
-        if allowed and login not in allowed:
+        if not _check_allowlist(allowed, login):
             return HTMLResponse(
                 f"<h1>403 Forbidden</h1><p>GitHub account <b>{login}</b> is not allowed.</p>",
                 403,
@@ -347,13 +348,12 @@ def build_auth_components(settings) -> tuple[dict | None, object | None]:
 
         app.add_middleware(AuthMiddleware, **middleware_kwargs)
     """
-    auth_enabled = os.environ.get("EREBUS_AUTH_ENABLED", "").lower() in ("1", "true", "yes")
-    if not getattr(settings, "auth_enabled", auth_enabled):
+    if not getattr(settings, "auth_enabled", False):
         return None, None
 
-    provider = getattr(settings, "auth_provider", os.environ.get("EREBUS_AUTH_PROVIDER", "github"))
+    provider = getattr(settings, "auth_provider", "github")
 
-    raw_secret = getattr(settings, "secret_key", os.environ.get("EREBUS_SECRET_KEY", ""))
+    raw_secret = getattr(settings, "secret_key", None) or ""
     if not raw_secret:
         import secrets as _secrets
         raw_secret = _secrets.token_hex(32)
@@ -363,27 +363,13 @@ def build_auth_components(settings) -> tuple[dict | None, object | None]:
         )
     secret_key = raw_secret.encode() if isinstance(raw_secret, str) else raw_secret
 
-    gh_client_id = getattr(
-        settings, "github_client_id", os.environ.get("EREBUS_GITHUB_CLIENT_ID", "")
-    )
-    gh_client_secret = getattr(
-        settings, "github_client_secret", os.environ.get("EREBUS_GITHUB_CLIENT_SECRET", "")
-    )
-    raw_allowed = getattr(
-        settings, "github_allowed_logins", os.environ.get("EREBUS_GITHUB_ALLOWED_LOGINS", "")
-    )
+    gh_client_id = getattr(settings, "github_client_id", "") or ""
+    gh_client_secret = getattr(settings, "github_client_secret", "") or ""
+    raw_allowed = getattr(settings, "github_allowed_logins", "") or ""
     gh_allowed = [u.strip() for u in raw_allowed.split(",") if u.strip()] if raw_allowed else []
 
-    authelia_header_user = getattr(
-        settings,
-        "authelia_header_user",
-        os.environ.get("EREBUS_AUTHELIA_HEADER_USER", "Remote-User"),
-    )
-    authelia_header_name = getattr(
-        settings,
-        "authelia_header_name",
-        os.environ.get("EREBUS_AUTHELIA_HEADER_NAME", "Remote-Name"),
-    )
+    authelia_header_user = getattr(settings, "authelia_header_user", "Remote-User")
+    authelia_header_name = getattr(settings, "authelia_header_name", "Remote-Name")
 
     middleware_kwargs = {
         "provider": provider,
