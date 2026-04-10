@@ -58,28 +58,34 @@ def _discover_builtin_skill_md() -> list[dict[str, Any]]:
 
 
 def _discover_user_skills() -> list[dict[str, Any]]:
-    """Discover user-created skills in ~/.erebus/skills/."""
+    """Discover user-created skills in ~/.erebus/skills/ and ~/.erebus/user-skills/."""
     settings = get_settings()
-    skills_dir = settings.data_dir / "skills"
     skills: list[dict[str, Any]] = []
-    if not skills_dir.exists():
-        return skills
 
-    # JSON descriptor skills
-    for path in sorted(skills_dir.glob("*.json")):
-        try:
-            meta = json.loads(path.read_text())
-            meta["source"] = "user"
-            meta["path"] = str(path)
-            skills.append(meta)
-        except Exception:
-            continue
+    # Legacy skills dir: JSON descriptors + SKILL.md files
+    skills_dir = settings.data_dir / "skills"
+    if skills_dir.exists():
+        for path in sorted(skills_dir.glob("*.json")):
+            try:
+                meta = json.loads(path.read_text())
+                meta["source"] = "user"
+                meta["path"] = str(path)
+                skills.append(meta)
+            except Exception:
+                continue
 
-    # SKILL.md format skills (recursive)
-    md_skills = discover_skills(skills_dir, recursive=True, filter_platform=True)
-    for s in md_skills:
-        s["source"] = "user-skill-md"
-    skills.extend(md_skills)
+        md_skills = discover_skills(skills_dir, recursive=True, filter_platform=True)
+        for s in md_skills:
+            s["source"] = "user-skill-md"
+        skills.extend(md_skills)
+
+    # Agent-created skills dir: SKILL.md files created via the API / agent
+    user_created_dir = settings.data_dir / "user-skills"
+    if user_created_dir.exists():
+        md_skills = discover_skills(user_created_dir, recursive=True, filter_platform=True)
+        for s in md_skills:
+            s["source"] = "user-created"
+        skills.extend(md_skills)
 
     return skills
 
@@ -149,15 +155,16 @@ def list_skill_categories() -> list[dict[str, str]]:
     """Return the list of skill categories from the builtins directory."""
     categories = discover_categories(_BUILTINS_DIR)
 
-    # Also check user skills directory
+    # Also check user skills directories
     settings = get_settings()
-    user_skills = settings.data_dir / "skills"
-    if user_skills.is_dir():
-        user_cats = discover_categories(user_skills)
-        existing_names = {c["name"] for c in categories}
-        for c in user_cats:
-            if c["name"] not in existing_names:
-                categories.append(c)
+    for user_dir_name in ("skills", "user-skills"):
+        user_dir = settings.data_dir / user_dir_name
+        if user_dir.is_dir():
+            user_cats = discover_categories(user_dir)
+            existing_names = {c["name"] for c in categories}
+            for c in user_cats:
+                if c["name"] not in existing_names:
+                    categories.append(c)
 
     return categories
 
@@ -184,7 +191,7 @@ def get_all_skill_tools():
 
 
 def save_user_skill(name: str, description: str, code: str) -> Path:
-    """Persist a user-created skill to disk.
+    """Persist a user-created skill to disk (legacy JSON format).
 
     Parameters
     ----------
@@ -210,5 +217,44 @@ def save_user_skill(name: str, description: str, code: str) -> Path:
             indent=2,
         )
     )
+    refresh_registry()
+    return skill_path
+
+
+def save_user_skill_md(name: str, description: str, content: str, category: str = "") -> Path:
+    """Persist a user-created skill as a SKILL.md file.
+
+    Skills are stored in ``~/.erebus/user-skills/<category>/<name>/SKILL.md``
+    (or ``~/.erebus/user-skills/<name>/SKILL.md`` when no category is given).
+    This directory is separate from the built-in skills and is loaded by the
+    agent at startup.
+
+    Parameters
+    ----------
+    name:
+        Short, unique skill name (used as the directory name).
+    description:
+        One-line description embedded in the SKILL.md frontmatter.
+    content:
+        Full SKILL.md body (instructions, usage guidelines, etc.).
+    category:
+        Optional category sub-directory.
+
+    Returns
+    -------
+    Path
+        Path to the saved SKILL.md file.
+    """
+    settings = get_settings()
+    base_dir = settings.data_dir / "user-skills"
+    if category:
+        skill_dir = base_dir / category / name
+    else:
+        skill_dir = base_dir / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+
+    frontmatter = f"---\nname: {name}\ndescription: {description}\n---\n\n"
+    skill_path = skill_dir / "SKILL.md"
+    skill_path.write_text(frontmatter + content, encoding="utf-8")
     refresh_registry()
     return skill_path

@@ -15,7 +15,7 @@ export default function SchedulesPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", cron: "", description: "", timezone: "UTC" });
+  const [form, setForm] = useState({ name: "", cron: "", description: "", timezone: "UTC", notification_channel: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,8 +40,11 @@ export default function SchedulesPage() {
     setSaving(true);
     setError(null);
     try {
-      await createSchedule(form);
-      setForm({ name: "", cron: "", description: "", timezone: "UTC" });
+      await createSchedule({
+        ...form,
+        notification_channel: form.notification_channel || undefined,
+      });
+      setForm({ name: "", cron: "", description: "", timezone: "UTC", notification_channel: "" });
       setShowCreate(false);
       await fetchSchedules();
     } catch (err) {
@@ -141,6 +144,15 @@ export default function SchedulesPage() {
                   placeholder="UTC"
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="sched-notify">Notification Channel (optional)</Label>
+                <Input
+                  id="sched-notify"
+                  value={form.notification_channel}
+                  onChange={(e) => setForm({ ...form, notification_channel: e.target.value })}
+                  placeholder="channel name (leave blank for default)"
+                />
+              </div>
               <Button onClick={handleCreate} disabled={saving || !form.name || !form.cron}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
                 Create Schedule
@@ -175,6 +187,9 @@ export default function SchedulesPage() {
                         <div className="font-mono">{schedule.cron}</div>
                         {schedule.description && <div>{schedule.description}</div>}
                         <div>Timezone: {schedule.timezone}</div>
+                        {schedule.notification_channel && (
+                          <div>Notify: {schedule.notification_channel}</div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

@@ -31,6 +31,7 @@ from erebus.config import ErebusSettings, get_settings
 from erebus.skills.loader import build_skills_from_dirs
 from erebus.skills.registry import get_all_skill_tools
 from erebus.soul.loader import load_soul_instructions
+from erebus.tools.notify import NotifyTools
 
 if TYPE_CHECKING:
     from agno.tools.toolkit import Toolkit
@@ -82,10 +83,15 @@ def _build_skills(settings: ErebusSettings) -> "Skills":
         if skills_path.exists():
             skill_dirs.append(skills_path)
 
-    # ~/.erebus/skills/ as SKILL.md-style directory
+    # ~/.erebus/skills/ as SKILL.md-style directory (legacy/external)
     user_skills_dir = settings.data_dir / "skills"
     if user_skills_dir.exists():
         skill_dirs.append(user_skills_dir)
+
+    # ~/.erebus/user-skills/ — skills created by the agent or via the API
+    agent_created_skills_dir = settings.data_dir / "user-skills"
+    if agent_created_skills_dir.exists():
+        skill_dirs.append(agent_created_skills_dir)
 
     # External skills directories from agent config file
     agent_config = load_agent_config()
@@ -146,11 +152,12 @@ def create_agent(
         db=db,
     )
 
-    # Core tools: web search + file operations + shell (pi-mono style)
+    # Core tools: web search + file operations + shell (pi-mono style) + notifications
     tools: list[Toolkit] = [
         DuckDuckGoTools(),
         FileTools(),
         ShellTools(),
+        NotifyTools(),
     ]
 
     # Legacy Python-module skills (backward compatibility)

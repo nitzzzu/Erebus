@@ -64,6 +64,12 @@ class ErebusSettings(BaseSettings):
         description="Path to additional skills directory (SKILL.md format)",
     )
 
+    # --- Notifications ---
+    apprise_default_url: Optional[str] = Field(
+        default=None,
+        description="Default apprise notification URL (quick single-channel setup)",
+    )
+
     # --- Soul / Personality ---
     soul_file: Optional[str] = Field(
         default=None,

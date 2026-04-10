@@ -16,6 +16,7 @@ import {
   Trash2,
   Pencil,
   Check,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/schedules", label: "Schedules", icon: Clock },
   { href: "/soul", label: "Soul", icon: Ghost },
   { href: "/channels", label: "Channels", icon: Radio },
+  { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

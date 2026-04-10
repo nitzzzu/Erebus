@@ -150,6 +150,12 @@ export default function SettingsPage() {
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
+                  <span className="text-sm">Apprise (default URL)</span>
+                  <Badge variant={settings?.apprise_default_url_configured ? "default" : "secondary"}>
+                    {settings?.apprise_default_url_configured ? "Configured" : "Not Set"}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
                   <span className="text-sm">Web UI</span>
                   <Badge variant="default">Always Active</Badge>
                 </div>
