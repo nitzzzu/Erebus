@@ -26,9 +26,9 @@ _USER_AGENT = (
 
 def _strip_html(raw_html: str) -> str:
     """Best-effort HTML → plain text conversion without dependencies."""
-    # Remove <script> and <style> blocks entirely
+    # Remove <script> and <style> blocks entirely (handle optional whitespace in end tag)
     text = re.sub(
-        r"<(script|style)[^>]*>.*?</(script|style)>",
+        r"<(script|style)[^>]*>.*?</\s*(script|style)\s*>",
         "",
         raw_html,
         flags=re.DOTALL | re.IGNORECASE,

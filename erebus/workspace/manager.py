@@ -62,11 +62,31 @@ class WorkspaceManager:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._store_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+    @staticmethod
+    def _safe_path(path: str) -> Path:
+        """Resolve and validate a workspace path.
+
+        Raises ValueError if the path is not absolute after resolution
+        or does not exist.
+        """
+        resolved = Path(path).expanduser().resolve()
+        if not resolved.is_absolute():
+            raise ValueError(f"Workspace path must be absolute: {resolved}")
+        return resolved
+
+    def _workspace_from_dict(self, raw: dict) -> Optional["Workspace"]:
+        """Construct a Workspace from a raw dict, ignoring unknown keys."""
+        try:
+            fields = Workspace.__dataclass_fields__
+            return Workspace(**{k: v for k, v in raw.items() if k in fields})
+        except TypeError:
+            return None
+
     # ── CRUD ─────────────────────────────────────────────────────────────────
 
     def create(self, name: str, path: str, description: str = "") -> Workspace:
         """Create a new workspace.  Raises ValueError if name already exists."""
-        resolved = Path(path).expanduser().resolve()
+        resolved = self._safe_path(path)
         with self._lock:
             data = self._load()
             if name in data:
@@ -83,7 +103,7 @@ class WorkspaceManager:
         raw = data.get(name)
         if raw is None:
             return None
-        return Workspace(**{k: v for k, v in raw.items() if k in Workspace.__dataclass_fields__})
+        return self._workspace_from_dict(raw)
 
     def list(self) -> list[Workspace]:
         """Return all workspaces sorted by name."""
@@ -91,12 +111,9 @@ class WorkspaceManager:
             data = self._load()
         workspaces = []
         for raw in data.values():
-            try:
-                fields = Workspace.__dataclass_fields__
-                ws = Workspace(**{k: v for k, v in raw.items() if k in fields})
+            ws = self._workspace_from_dict(raw)
+            if ws is not None:
                 workspaces.append(ws)
-            except TypeError:
-                continue
         return sorted(workspaces, key=lambda w: w.name)
 
     def delete(self, name: str) -> bool:
@@ -122,7 +139,8 @@ class WorkspaceManager:
                 return None
             raw = data[name]
             if path is not None:
-                raw["path"] = str(Path(path).expanduser().resolve())
+                resolved = self._safe_path(path)
+                raw["path"] = str(resolved)
             if description is not None:
                 raw["description"] = description
             data[name] = raw

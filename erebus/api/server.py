@@ -636,13 +636,11 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
     @app.post("/api/workspaces")
     async def create_workspace(req: WorkspaceCreateRequest):
         """Create a new workspace."""
-        from pathlib import Path as _Path
-
         from erebus.workspace.manager import WorkspaceManager
 
         mgr = WorkspaceManager(settings.data_dir)
         try:
-            resolved = _Path(req.path).expanduser().resolve()
+            resolved = mgr._safe_path(req.path)
             if not resolved.exists():
                 raise HTTPException(status_code=400, detail=f"Path does not exist: {resolved}")
             ws = mgr.create(req.name, str(resolved), req.description)

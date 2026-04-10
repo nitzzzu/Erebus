@@ -5,7 +5,6 @@ Provides fast pattern-based file search respecting the active workspace.
 
 from __future__ import annotations
 
-import fnmatch  # noqa: F401 - kept for potential external use
 import logging
 import os
 from pathlib import Path

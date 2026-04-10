@@ -142,8 +142,8 @@ class FileEditTools(Toolkit):
                 "Tip: use view_file() to check the exact text including whitespace and indentation."
             )
 
-        n = None if count == -1 else count
-        updated = original.replace(old_str, new_str, n if n is not None else -1)
+        # str.replace(old, new, count) treats count=-1 as "replace all" in Python 3
+        updated = original.replace(old_str, new_str, count)
         replaced = original.count(old_str) if count == -1 else min(count, original.count(old_str))
 
         try:
