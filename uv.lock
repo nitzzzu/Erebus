@@ -646,7 +646,7 @@ name = "erebus"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "agno", extra = ["anthropic", "azure", "openai"] },
+    { name = "agno", extra = ["anthropic", "azure", "openai", "telegram"] },
     { name = "aiohttp" },
     { name = "apprise" },
     { name = "botbuilder-core" },
@@ -690,7 +690,7 @@ telegram = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agno", extras = ["anthropic", "azure", "openai"], specifier = ">=2.5.15" },
+    { name = "agno", extras = ["anthropic", "azure", "openai", "telegram"], specifier = ">=2.5.15" },
     { name = "agno", extras = ["telegram"], marker = "extra == 'telegram'" },
     { name = "aiohttp", specifier = ">=3.10.0" },
     { name = "apprise", specifier = ">=1.9.0" },

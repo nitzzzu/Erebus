@@ -7,6 +7,7 @@ in a single agent factory.
 Pi-mono style capabilities are enabled by default:
 - FileTools: read, write, edit, search files
 - ShellTools: execute shell/bash commands
+- SchedulerTools: create, list, update, delete cron schedules
 - Agno Skills: SKILL.md-based on-demand domain expertise (hermes-style categories)
 - MCP: Model Context Protocol server integration
 """
@@ -32,6 +33,7 @@ from erebus.skills.loader import build_skills_from_dirs
 from erebus.skills.registry import get_all_skill_tools
 from erebus.soul.loader import load_soul_instructions
 from erebus.tools.notify import NotifyTools
+from erebus.tools.scheduler import SchedulerTools
 
 if TYPE_CHECKING:
     from agno.tools.toolkit import Toolkit
@@ -212,6 +214,7 @@ def create_agent(
         FileTools(),
         ShellTools(),
         NotifyTools(),
+        SchedulerTools(),
     ]
 
     # Legacy Python-module skills (backward compatibility)

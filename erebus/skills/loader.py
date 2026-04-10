@@ -207,12 +207,17 @@ def build_skills_from_dirs(
 ) -> Skills:
     """Build an Agno ``Skills`` object from one or more skill root directories.
 
-    Each directory is registered as a ``LocalSkills`` loader.  Agno handles
-    the actual SKILL.md parsing and tool registration; we just point it at
-    the right directories.
+    Agno's ``LocalSkills`` only descends **one level** from the path it is
+    given.  For hermes-style layouts (``category/skill-name/SKILL.md``) we
+    must therefore point a loader at each *category* directory, not at the
+    root.  This function handles both flat and nested layouts automatically:
 
-    For hermes-style nested layouts (category/skill-name/SKILL.md), Agno's
-    ``LocalSkills`` already walks subdirectories, so this works out of the box.
+    * If a directory contains its own ``SKILL.md`` it is loaded as a single
+      skill (one ``LocalSkills`` pointed at the *parent* directory suffices,
+      which is the existing behaviour via the root-level loader).
+    * If a directory has **no** ``SKILL.md`` of its own but contains
+      sub-directories with ``SKILL.md`` files, a dedicated ``LocalSkills``
+      loader is created for that directory so Agno can find its children.
 
     Parameters
     ----------
@@ -224,8 +229,44 @@ def build_skills_from_dirs(
     loaders: list[LocalSkills] = []
 
     for d in dirs:
-        if d.is_dir():
-            loaders.append(LocalSkills(str(d)))
+        if not d.is_dir():
+            continue
+
+        if (d / "SKILL.md").exists():
+            # Root itself is a single skill — point loader at its parent so
+            # Agno iterates children (standard flat layout).
+            loaders.append(LocalSkills(str(d.parent), validate=False))
+            continue
+
+        # Separate: does the root hold skills directly (flat) or only via
+        # category subdirs (hermes-style)?
+        has_direct_skills = any(
+            (child / "SKILL.md").exists()
+            for child in d.iterdir()
+            if child.is_dir() and child.name not in EXCLUDED_DIRS
+        )
+
+        if has_direct_skills:
+            # At least some skills are at root/<skill>/SKILL.md → one loader
+            # for the root covers them.
+            loaders.append(LocalSkills(str(d), validate=False))
+
+        # Also add a loader for every category subdirectory that contains
+        # nested skills (root/<category>/<skill>/SKILL.md).
+        for child in sorted(d.iterdir()):
+            if not child.is_dir() or child.name in EXCLUDED_DIRS:
+                continue
+            if (child / "SKILL.md").exists():
+                # Already covered by the root-level loader above.
+                continue
+            # Category dir with no own SKILL.md — check for nested skills.
+            has_nested = any(
+                (gc / "SKILL.md").exists()
+                for gc in child.iterdir()
+                if gc.is_dir() and gc.name not in EXCLUDED_DIRS
+            )
+            if has_nested:
+                loaders.append(LocalSkills(str(child), validate=False))
 
     if extra_loaders:
         loaders.extend(extra_loaders)
