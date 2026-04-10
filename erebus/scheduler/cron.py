@@ -29,6 +29,7 @@ class ScheduleEntry:
     enabled: bool = True
     payload: dict[str, Any] = field(default_factory=dict)
     timezone: str = "UTC"
+    notification_channel: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     last_run: Optional[str] = None
 
@@ -79,6 +80,7 @@ class ErebusScheduler:
         description: str = "",
         payload: Optional[dict[str, Any]] = None,
         timezone: str = "UTC",
+        notification_channel: Optional[str] = None,
     ) -> ScheduleEntry:
         # Validate cron expression
         if not croniter.is_valid(cron):
@@ -89,6 +91,7 @@ class ErebusScheduler:
             description=description,
             payload=payload or {},
             timezone=timezone,
+            notification_channel=notification_channel,
         )
         self._schedules.append(entry)
         self._save()

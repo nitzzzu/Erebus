@@ -73,6 +73,13 @@ class SessionRenameRequest(BaseModel):
 class SkillCreateRequest(BaseModel):
     name: str
     description: str
+    content: str
+    category: str = ""
+
+
+class SkillCreateLegacyRequest(BaseModel):
+    name: str
+    description: str
     code: str
 
 
@@ -82,6 +89,7 @@ class ScheduleCreateRequest(BaseModel):
     description: str = ""
     payload: dict[str, Any] = {}
     timezone: str = "UTC"
+    notification_channel: Optional[str] = None
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -91,6 +99,7 @@ class ScheduleUpdateRequest(BaseModel):
     enabled: Optional[bool] = None
     payload: Optional[dict[str, Any]] = None
     timezone: Optional[str] = None
+    notification_channel: Optional[str] = None
 
 
 class SoulRequest(BaseModel):
@@ -103,8 +112,37 @@ class SettingsResponse(BaseModel):
     skills_dir: Optional[str] = None
     telegram_configured: bool = False
     teams_configured: bool = False
+    apprise_default_url_configured: bool = False
     api_host: str = "0.0.0.0"
     api_port: int = 8741
+
+
+class NotificationChannelModel(BaseModel):
+    id: str
+    name: str
+    url: str
+    enabled: bool = True
+    is_default: bool = False
+
+
+class NotificationChannelCreateRequest(BaseModel):
+    name: str
+    url: str
+    enabled: bool = True
+    is_default: bool = False
+
+
+class NotificationChannelUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    enabled: Optional[bool] = None
+    is_default: Optional[bool] = None
+
+
+class NotificationTestRequest(BaseModel):
+    message: str = "Test notification from Erebus"
+    title: str = "Erebus Test"
+    channel_id: Optional[str] = None
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -321,6 +359,13 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
 
     @app.post("/api/skills")
     async def create_skill(req: SkillCreateRequest):
+        from erebus.skills.registry import save_user_skill_md
+
+        path = save_user_skill_md(req.name, req.description, req.content, req.category)
+        return {"saved": True, "path": str(path)}
+
+    @app.post("/api/skills/legacy")
+    async def create_skill_legacy(req: SkillCreateLegacyRequest):
         from erebus.skills.registry import save_user_skill
 
         path = save_user_skill(req.name, req.description, req.code)
@@ -379,6 +424,7 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
                 description=req.description,
                 payload=req.payload,
                 timezone=req.timezone,
+                notification_channel=req.notification_channel,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
@@ -466,6 +512,7 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
             skills_dir=settings.skills_dir,
             telegram_configured=bool(settings.telegram_token),
             teams_configured=bool(settings.teams_app_id),
+            apprise_default_url_configured=bool(settings.apprise_default_url),
             api_host=settings.api_host,
             api_port=settings.api_port,
         )
@@ -479,6 +526,66 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         if req.skills_dir is not None:
             settings.skills_dir = req.skills_dir
         return {"updated": True}
+
+    # -- Notification Channels -----------------------------------------------
+
+    @app.get("/api/notifications/channels")
+    async def list_notification_channels():
+        from erebus.notifications.manager import NotificationManager
+
+        mgr = NotificationManager(settings.data_dir)
+        channels = mgr.list()
+        return {"channels": [vars(c) for c in channels]}
+
+    @app.post("/api/notifications/channels", response_model=NotificationChannelModel)
+    async def create_notification_channel(req: NotificationChannelCreateRequest):
+        from erebus.notifications.manager import NotificationManager
+
+        mgr = NotificationManager(settings.data_dir)
+        ch = mgr.create(
+            name=req.name,
+            url=req.url,
+            enabled=req.enabled,
+            is_default=req.is_default,
+        )
+        return NotificationChannelModel(**vars(ch))
+
+    @app.put("/api/notifications/channels/{channel_id}", response_model=NotificationChannelModel)
+    async def update_notification_channel(
+        channel_id: str, req: NotificationChannelUpdateRequest
+    ):
+        from erebus.notifications.manager import NotificationManager
+
+        mgr = NotificationManager(settings.data_dir)
+        updates = req.model_dump(exclude_none=True)
+        ch = mgr.update(channel_id, **updates)
+        if ch is None:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        return NotificationChannelModel(**vars(ch))
+
+    @app.delete("/api/notifications/channels/{channel_id}")
+    async def delete_notification_channel(channel_id: str):
+        from erebus.notifications.manager import NotificationManager
+
+        mgr = NotificationManager(settings.data_dir)
+        ok = mgr.delete(channel_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        return {"deleted": True}
+
+    @app.post("/api/notifications/test")
+    async def test_notification(req: NotificationTestRequest):
+        from erebus.notifications.manager import NotificationManager
+
+        mgr = NotificationManager(settings.data_dir)
+        result = mgr.send(
+            message=req.message,
+            title=req.title,
+            channel_id=req.channel_id,
+        )
+        if not result["sent"]:
+            raise HTTPException(status_code=400, detail=result.get("error", "Send failed"))
+        return result
 
     # -- Health --------------------------------------------------------------
 

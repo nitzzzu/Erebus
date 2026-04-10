@@ -69,6 +69,7 @@ export interface Schedule {
   enabled: boolean;
   payload: Record<string, unknown>;
   timezone: string;
+  notification_channel: string | null;
   created_at: string;
   last_run: string | null;
 }
@@ -83,6 +84,7 @@ export function createSchedule(data: {
   description?: string;
   payload?: Record<string, unknown>;
   timezone?: string;
+  notification_channel?: string;
 }) {
   return request<Schedule>("/api/schedules", {
     method: "POST",
@@ -133,6 +135,7 @@ export interface Settings {
   reasoning_model: string | null;
   telegram_configured: boolean;
   teams_configured: boolean;
+  apprise_default_url_configured: boolean;
   api_host: string;
   api_port: number;
 }
@@ -144,6 +147,72 @@ export function getSettings() {
 export function updateSettings(data: Partial<Settings>) {
   return request<{ updated: boolean }>("/api/settings", {
     method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+// Notification Channels
+export interface NotificationChannel {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  is_default: boolean;
+}
+
+export function listNotificationChannels() {
+  return request<{ channels: NotificationChannel[] }>("/api/notifications/channels");
+}
+
+export function createNotificationChannel(data: {
+  name: string;
+  url: string;
+  enabled?: boolean;
+  is_default?: boolean;
+}) {
+  return request<NotificationChannel>("/api/notifications/channels", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateNotificationChannel(id: string, data: Partial<NotificationChannel>) {
+  return request<NotificationChannel>(
+    `/api/notifications/channels/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export function deleteNotificationChannel(id: string) {
+  return request<{ deleted: boolean }>(
+    `/api/notifications/channels/${encodeURIComponent(id)}`,
+    { method: "DELETE" }
+  );
+}
+
+export function testNotification(data: {
+  message?: string;
+  title?: string;
+  channel_id?: string;
+}) {
+  return request<{ sent: boolean; channels: string[] }>("/api/notifications/test", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// Skills (user-created SKILL.md format)
+export function createUserSkill(data: {
+  name: string;
+  description: string;
+  content: string;
+  category?: string;
+}) {
+  return request<{ saved: boolean; path: string }>("/api/skills", {
+    method: "POST",
     body: JSON.stringify(data),
   });
 }
