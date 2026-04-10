@@ -18,17 +18,17 @@ COPY web/ ./
 RUN npm run build
 
 # ── Stage 2: Build ErebusLite (Go) ──────────────────────────────────────────
-FROM golang:1.24-alpine AS go-builder
+# FROM golang:1.24-alpine AS go-builder
 
-WORKDIR /build/erebuslite
+# WORKDIR /build/erebuslite
 
-# Copy go module files first (layer caching)
-COPY erebuslite/go.mod erebuslite/go.sum ./
-RUN go mod download
+# # Copy go module files first (layer caching)
+# COPY erebuslite/go.mod erebuslite/go.sum ./
+# RUN go mod download
 
-# Copy source and build
-COPY erebuslite/ ./
-RUN CGO_ENABLED=0 go build -o /erebuslite ./cmd/main.go
+# # Copy source and build
+# COPY erebuslite/ ./
+# RUN CGO_ENABLED=0 go build -o /erebuslite ./cmd/main.go
 
 # ── Stage 3: Python runtime ─────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
@@ -57,7 +57,7 @@ RUN pip install --no-cache-dir -e ".[all]"
 COPY --from=web-builder /build/web/out ./web/out
 
 # Copy ErebusLite binary from stage 2
-COPY --from=go-builder /erebuslite ./erebuslite
+#COPY --from=go-builder /erebuslite ./erebuslite
 
 # Create data directory
 RUN mkdir -p /data
