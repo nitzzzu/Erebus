@@ -861,6 +861,8 @@ def _run_agent_streaming(
             stream_id=stream_id,
         )
         full_content = ""
+        content_blocks: list[dict] = []
+        _pending_text = ""
 
         response_iter = agent.run(
             message,
@@ -872,26 +874,44 @@ def _run_agent_streaming(
 
         for chunk in response_iter:
             if chunk.event == RunEvent.tool_call_started:
-                tool_info = {
-                    "name": chunk.tool.tool_name if chunk.tool else "unknown",
-                    "args": str(chunk.tool.tool_args)[:_MAX_TOOL_ARGS_LEN] if chunk.tool else "",
-                }
-                _put("tool_start", tool_info)
+                if _pending_text:
+                    content_blocks.append({"type": "text", "text": _pending_text})
+                    _pending_text = ""
+                tool_name = chunk.tool.tool_name if chunk.tool else "unknown"
+                tool_args = str(chunk.tool.tool_args)[:_MAX_TOOL_ARGS_LEN] if chunk.tool else ""
+                content_blocks.append({
+                    "type": "tool",
+                    "tool": {"name": tool_name, "args": tool_args, "status": "running"},
+                })
+                _put("tool_start", {"name": tool_name, "args": tool_args})
 
             elif chunk.event == RunEvent.tool_call_completed:
+                tool_name = chunk.tool.tool_name if chunk.tool else "unknown"
                 result_str = ""
                 if chunk.tool and chunk.tool.result is not None:
                     result_str = str(chunk.tool.result)[:_MAX_TOOL_RESULT_LEN]
-                tool_info = {
-                    "name": chunk.tool.tool_name if chunk.tool else "unknown",
-                    "result": result_str,
-                }
-                _put("tool_end", tool_info)
+                # Update the last matching running tool block
+                for i in range(len(content_blocks) - 1, -1, -1):
+                    b = content_blocks[i]
+                    if (
+                        b.get("type") == "tool"
+                        and b["tool"]["name"] == tool_name
+                        and b["tool"]["status"] == "running"
+                    ):
+                        content_blocks[i] = {
+                            "type": "tool",
+                            "tool": {**b["tool"], "status": "completed", "result": result_str},
+                        }
+                        break
+                else:
+                    logger.warning("tool_call_completed for '%s' with no matching running block", tool_name)
+                _put("tool_end", {"name": tool_name, "result": result_str})
 
             elif chunk.event == RunEvent.run_content:
                 text = chunk.content or ""
                 if text:
                     full_content += text
+                    _pending_text += text
                     _put("token", {"text": text})
 
             elif chunk.event == RunEvent.run_started:
@@ -900,8 +920,16 @@ def _run_agent_streaming(
             elif chunk.event == RunEvent.run_completed:
                 pass  # Handled below in done
 
-        # Save assistant message to session
-        session.messages.append({"role": "assistant", "content": full_content})
+        # Flush any trailing text block
+        if _pending_text:
+            content_blocks.append({"type": "text", "text": _pending_text})
+
+        # Save assistant message to session (include content_blocks so tool calls
+        # are visible when the session is reloaded later)
+        assistant_msg: dict = {"role": "assistant", "content": full_content}
+        if content_blocks:
+            assistant_msg["content_blocks"] = content_blocks
+        session.messages.append(assistant_msg)
 
         # Auto-title: if this is the first exchange, set session title
         if len(session.messages) == 2:

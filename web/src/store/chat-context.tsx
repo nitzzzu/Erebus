@@ -230,6 +230,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const msgs: ChatMessage[] = session.messages.map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
+        content_blocks: m.content_blocks,
       }));
       dispatch({ type: "SET_CURRENT_SESSION", sessionId, messages: msgs });
     } catch {
