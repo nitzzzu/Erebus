@@ -11,6 +11,7 @@ import {
 import {
   type ChatMessage,
   type ToolCallEvent,
+  type ContentBlock,
   type SessionCompact,
   startChatStream,
   connectChatStream,
@@ -29,8 +30,8 @@ interface ChatState {
   busy: boolean;
   model: string;
   error: string | null;
-  activeTools: ToolCallEvent[];
-  streamContent: string;
+  /** Ordered interleaved content blocks built during the current stream. */
+  streamBlocks: ContentBlock[];
 }
 
 const initialState: ChatState = {
@@ -40,8 +41,7 @@ const initialState: ChatState = {
   busy: false,
   model: "",
   error: null,
-  activeTools: [],
-  streamContent: "",
+  streamBlocks: [],
 };
 
 // ── Actions ───────────────────────────────────────────────────────────────
@@ -71,8 +71,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         currentSessionId: action.sessionId,
         messages: action.messages,
         error: null,
-        activeTools: [],
-        streamContent: "",
+        streamBlocks: [],
       };
 
     case "ADD_USER_MESSAGE":
@@ -81,8 +80,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         messages: [...state.messages, { role: "user", content: action.content }],
         busy: true,
         error: null,
-        activeTools: [],
-        streamContent: "",
+        streamBlocks: [],
       };
 
     case "SET_BUSY":
@@ -94,38 +92,66 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "SET_ERROR":
       return { ...state, error: action.error };
 
-    case "APPEND_TOKEN":
-      return { ...state, streamContent: state.streamContent + action.text };
+    case "APPEND_TOKEN": {
+      const blocks = state.streamBlocks;
+      const last = blocks[blocks.length - 1];
+      if (last && last.type === "text") {
+        // Append to existing trailing text block
+        const updated: ContentBlock[] = [
+          ...blocks.slice(0, -1),
+          { type: "text", text: last.text + action.text },
+        ];
+        return { ...state, streamBlocks: updated };
+      }
+      // Start new text block
+      return {
+        ...state,
+        streamBlocks: [...blocks, { type: "text", text: action.text }],
+      };
+    }
 
     case "TOOL_START":
       return {
         ...state,
-        activeTools: [...state.activeTools, action.tool],
+        streamBlocks: [
+          ...state.streamBlocks,
+          { type: "tool", tool: { ...action.tool, status: "running" } },
+        ],
       };
 
-    case "TOOL_END":
-      return {
-        ...state,
-        activeTools: state.activeTools.map((t) =>
-          t.name === action.name && t.status === "running"
-            ? { ...t, status: "completed" as const, result: action.result }
-            : t
-        ),
-      };
+    case "TOOL_END": {
+      // Update the last running tool with matching name
+      const blocks = [...state.streamBlocks];
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        const b = blocks[i];
+        if (b.type === "tool" && b.tool.name === action.name && b.tool.status === "running") {
+          blocks[i] = {
+            type: "tool",
+            tool: { ...b.tool, status: "completed", result: action.result },
+          };
+          break;
+        }
+      }
+      return { ...state, streamBlocks: blocks };
+    }
 
     case "STREAM_DONE": {
+      // Derive full text content from text blocks for storage/compat
+      const fullContent = state.streamBlocks
+        .filter((b): b is { type: "text"; text: string } => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+
       const assistantMsg: ChatMessage = {
         role: "assistant",
-        content: state.streamContent,
-        tool_calls:
-          state.activeTools.length > 0 ? [...state.activeTools] : undefined,
+        content: fullContent,
+        content_blocks: state.streamBlocks.length > 0 ? [...state.streamBlocks] : undefined,
       };
       return {
         ...state,
         messages: [...state.messages, assistantMsg],
         busy: false,
-        streamContent: "",
-        activeTools: [],
+        streamBlocks: [],
         model: action.model,
         currentSessionId: action.sessionId,
         sessions: state.sessions.map((s) =>
@@ -136,29 +162,34 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       };
     }
 
-    case "STREAM_ERROR":
+    case "STREAM_ERROR": {
+      const fullContent = state.streamBlocks
+        .filter((b): b is { type: "text"; text: string } => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+
       return {
         ...state,
         messages: [
           ...state.messages,
           {
             role: "assistant",
-            content: state.streamContent || `Error: ${action.message}`,
+            content: fullContent || `Error: ${action.message}`,
+            content_blocks: state.streamBlocks.length > 0 ? [...state.streamBlocks] : undefined,
           },
         ],
         busy: false,
-        streamContent: "",
-        activeTools: [],
+        streamBlocks: [],
         error: action.message,
       };
+    }
 
     case "CLEAR_MESSAGES":
       return {
         ...state,
         messages: [],
         currentSessionId: null,
-        activeTools: [],
-        streamContent: "",
+        streamBlocks: [],
         error: null,
       };
 
@@ -383,3 +414,4 @@ export function useChat() {
   if (!ctx) throw new Error("useChat must be used within ChatProvider");
   return ctx;
 }
+

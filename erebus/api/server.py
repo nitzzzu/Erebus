@@ -81,12 +81,6 @@ class SkillInstallRequest(BaseModel):
     url: str
 
 
-class SkillCreateLegacyRequest(BaseModel):
-    name: str
-    description: str
-    code: str
-
-
 class ScheduleCreateRequest(BaseModel):
     name: str
     cron: str
@@ -384,13 +378,6 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         from erebus.skills.registry import save_user_skill_md
 
         path = save_user_skill_md(req.name, req.description, req.content, req.category)
-        return {"saved": True, "path": str(path)}
-
-    @app.post("/api/skills/legacy")
-    async def create_skill_legacy(req: SkillCreateLegacyRequest):
-        from erebus.skills.registry import save_user_skill
-
-        path = save_user_skill(req.name, req.description, req.code)
         return {"saved": True, "path": str(path)}
 
     @app.post("/api/skills/install")

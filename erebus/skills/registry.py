@@ -20,7 +20,6 @@ metadata extraction.
 from __future__ import annotations
 
 import importlib
-import json
 import pkgutil
 import shutil
 from pathlib import Path
@@ -63,18 +62,9 @@ def _discover_user_skills() -> list[dict[str, Any]]:
     settings = get_settings()
     skills: list[dict[str, Any]] = []
 
-    # Legacy skills dir: JSON descriptors + SKILL.md files
+    # Legacy skills dir: SKILL.md files
     skills_dir = settings.data_dir / "skills"
     if skills_dir.exists():
-        for path in sorted(skills_dir.glob("*.json")):
-            try:
-                meta = json.loads(path.read_text())
-                meta["source"] = "user"
-                meta["path"] = str(path)
-                skills.append(meta)
-            except Exception:
-                continue
-
         md_skills = discover_skills(skills_dir, recursive=True, filter_platform=True)
         for s in md_skills:
             s["source"] = "user-skill-md"
@@ -229,18 +219,13 @@ def delete_user_skill(name: str) -> bool:
                         break
 
     if not deleted:
-        # Legacy skills dir: JSON file or SKILL.md sub-dir
+        # Legacy skills dir: SKILL.md sub-dir
         skills_dir = settings.data_dir / "skills"
         if skills_dir.exists():
-            json_path = skills_dir / f"{name}.json"
-            if json_path.exists():
-                json_path.unlink()
+            candidate = skills_dir / name
+            if candidate.is_dir():
+                shutil.rmtree(candidate)
                 deleted = True
-            else:
-                candidate = skills_dir / name
-                if candidate.is_dir():
-                    shutil.rmtree(candidate)
-                    deleted = True
 
     if deleted:
         refresh_registry()
@@ -352,37 +337,6 @@ def read_skill_file(name: str, file_path: str) -> str | None:
         return target.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-
-
-def save_user_skill(name: str, description: str, code: str) -> Path:
-    """Persist a user-created skill to disk (legacy JSON format).
-
-    Parameters
-    ----------
-    name:
-        Short, unique skill name.
-    description:
-        Human-readable description.
-    code:
-        Python code that defines the skill.
-
-    Returns
-    -------
-    Path
-        Path to the saved skill JSON file.
-    """
-    settings = get_settings()
-    skills_dir = settings.data_dir / "skills"
-    skills_dir.mkdir(parents=True, exist_ok=True)
-    skill_path = skills_dir / f"{name}.json"
-    skill_path.write_text(
-        json.dumps(
-            {"name": name, "description": description, "code": code},
-            indent=2,
-        )
-    )
-    refresh_registry()
-    return skill_path
 
 
 def save_user_skill_md(name: str, description: str, content: str, category: str = "") -> Path:

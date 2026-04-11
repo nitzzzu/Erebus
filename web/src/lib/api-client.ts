@@ -14,23 +14,29 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
+export interface ToolCallEvent {
+  name: string;
+  args?: string;
+  result?: string;
+  status: "running" | "completed" | "error";
+}
+
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "tool"; tool: ToolCallEvent };
+
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   tool_calls?: ToolCallEvent[];
+  /** Ordered interleaved content blocks (text + tool calls in arrival order). */
+  content_blocks?: ContentBlock[];
 }
 
 export interface ChatResponse {
   content: string;
   session_id: string;
   model: string;
-}
-
-export interface ToolCallEvent {
-  name: string;
-  args?: string;
-  result?: string;
-  status: "running" | "completed" | "error";
 }
 
 export interface SessionCompact {

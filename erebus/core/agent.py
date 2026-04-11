@@ -23,7 +23,6 @@ from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.memory import MemoryManager
 from agno.skills import Skills
-from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.file import FileTools
 from agno.tools.shell import ShellTools
 
@@ -238,7 +237,6 @@ def create_agent(
 
     # Core tools (pi-mono style + new capabilities)
     tools: list[Toolkit] = [
-        DuckDuckGoTools(),
         FileTools(base_dir=Path(effective_workspace) if effective_workspace else None),
         ShellTools(),
         NotifyTools(),
@@ -248,11 +246,19 @@ def create_agent(
         TodoTools(workspace_name=None),  # global todo; session/workspace scoping via WorkspaceTools
         GlobTools(workspace_path=effective_workspace),
         GrepTools(workspace_path=effective_workspace),
-        WebFetchTools(),
+        WebFetchTools(api_url=settings.agentic_fetch_url),
         FileEditTools(workspace_path=effective_workspace),
         REPLTools(workspace_path=effective_workspace),
         AskUserTools(stream_id=stream_id),
     ]
+
+    # Obsidian tools — only when configured
+    if settings.obsidian_api_url and settings.obsidian_api_key:
+        from erebus.tools.obsidian import ObsidianTools
+        tools.append(ObsidianTools(
+            api_url=settings.obsidian_api_url,
+            api_key=settings.obsidian_api_key,
+        ))
 
     # Legacy Python-module skills (backward compatibility)
     tools.extend(get_all_skill_tools())

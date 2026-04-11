@@ -145,6 +145,22 @@ class ErebusSettings(BaseSettings):
     azure_foundry_api_key: Optional[str] = Field(default=None)
     azure_foundry_api_version: Optional[str] = Field(default=None)
 
+    # Obsidian Local REST API
+    obsidian_api_url: Optional[str] = Field(
+        default=None,
+        description="Obsidian Local REST API base URL (e.g. https://localhost:27124)",
+    )
+    obsidian_api_key: Optional[str] = Field(
+        default=None,
+        description="Obsidian Local REST API key (Authorization: Bearer ...)",
+    )
+
+    # Agentic Fetch API
+    agentic_fetch_url: Optional[str] = Field(
+        default=None,
+        description="Agentic Fetch API base URL for web search and fetch",
+    )
+
 
 def get_settings() -> ErebusSettings:
     """Return a cached settings instance."""
