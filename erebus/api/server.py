@@ -903,6 +903,8 @@ def _run_agent_streaming(
                             "tool": {**b["tool"], "status": "completed", "result": result_str},
                         }
                         break
+                else:
+                    logger.warning("tool_call_completed for '%s' with no matching running block", tool_name)
                 _put("tool_end", {"name": tool_name, "result": result_str})
 
             elif chunk.event == RunEvent.run_content:
