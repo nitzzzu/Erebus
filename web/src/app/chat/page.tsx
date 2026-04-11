@@ -7,11 +7,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { MarkdownContent } from "@/components/markdown-content";
-import { ToolCallList } from "@/components/tool-call-card";
+import { ToolCallCard, ToolCallList } from "@/components/tool-call-card";
 import { ThinkingIndicator } from "@/components/thinking-indicator";
 import { WorkspaceFileExplorer } from "@/components/workspace-file-explorer";
 import { useChat } from "@/store/chat-context";
-import { listWorkspaces } from "@/lib/api-client";
+import { listWorkspaces, type ContentBlock } from "@/lib/api-client";
 
 interface Workspace {
   name: string;
@@ -21,7 +21,7 @@ interface Workspace {
 
 export default function ChatPage() {
   const { state, sendChat, newSession } = useChat();
-  const { messages, busy, model, streamContent, activeTools } = state;
+  const { messages, busy, model, streamBlocks } = state;
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -43,7 +43,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamContent, activeTools]);
+  }, [messages, streamBlocks]);
 
   // Auto-focus textarea
   useEffect(() => {
@@ -225,48 +225,64 @@ export default function ChatPage() {
                           </Badge>
                         )}
                       </div>
-                      {msg.tool_calls && msg.tool_calls.length > 0 && (
-                        <ToolCallList tools={msg.tool_calls} />
+                      {/* Render inline content blocks in order (tool calls interleaved with text) */}
+                      {msg.content_blocks && msg.content_blocks.length > 0 ? (
+                        <div className="text-sm leading-relaxed space-y-1">
+                          {msg.content_blocks.map((block, bi) =>
+                            block.type === "tool" ? (
+                              <ToolCallCard key={bi} tool={block.tool} />
+                            ) : (
+                              block.text && (
+                                <MarkdownContent key={bi} content={block.text} />
+                              )
+                            )
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          {msg.tool_calls && msg.tool_calls.length > 0 && (
+                            <ToolCallList tools={msg.tool_calls} />
+                          )}
+                          <div className="text-sm leading-relaxed">
+                            <MarkdownContent content={msg.content} />
+                          </div>
+                        </>
                       )}
-                      <div className="text-sm leading-relaxed">
-                        <MarkdownContent content={msg.content} />
-                      </div>
                     </div>
                   </div>
                 )}
               </div>
             ))}
 
-            {/* Active streaming content */}
+            {/* Active streaming content — inline blocks in arrival order */}
             {busy && (
-              <div>
-                {/* Tool calls in progress */}
-                {activeTools.length > 0 && (
-                  <div className="flex items-start gap-3 py-1">
-                    <div className="w-8 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <ToolCallList tools={activeTools} />
+              <div className="flex items-start gap-3 py-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card border border-border">
+                  <Bot className="h-4 w-4 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1 pt-1">
+                  {streamBlocks.length > 0 ? (
+                    <div className="text-sm leading-relaxed space-y-1">
+                      {streamBlocks.map((block, bi) =>
+                        block.type === "tool" ? (
+                          <ToolCallCard key={bi} tool={block.tool} />
+                        ) : (
+                          block.text && (
+                            <div key={bi}>
+                              <MarkdownContent content={block.text} />
+                              {/* Show cursor only after last text block */}
+                              {bi === streamBlocks.length - 1 && (
+                                <span className="inline-block h-4 w-0.5 animate-pulse bg-primary ml-0.5" />
+                              )}
+                            </div>
+                          )
+                        )
+                      )}
                     </div>
-                  </div>
-                )}
-
-                {/* Streaming text */}
-                {streamContent ? (
-                  <div className="flex items-start gap-3 py-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card border border-border">
-                      <Bot className="h-4 w-4 text-primary" />
-                    </div>
-                    <div className="min-w-0 flex-1 pt-1">
-                      <div className="mb-1 text-xs font-medium text-muted-foreground">Erebus</div>
-                      <div className="text-sm leading-relaxed">
-                        <MarkdownContent content={streamContent} />
-                        <span className="inline-block h-4 w-0.5 animate-pulse bg-primary ml-0.5" />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  activeTools.length === 0 && <ThinkingIndicator />
-                )}
+                  ) : (
+                    <ThinkingIndicator />
+                  )}
+                </div>
               </div>
             )}
 
