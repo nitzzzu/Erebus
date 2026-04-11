@@ -1,0 +1,31 @@
+{
+  "name": "Erebus Dev",
+  // Python 3.12 base with Node 22 added via features
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" }
+  },
+
+  // Install Python + Node deps on first container start
+  "postCreateCommand": "pip install -e '.[all]' && cd web && npm ci",
+
+  // Expose API (8741) and Next.js dev server (3000)
+  "forwardPorts": [8741, 3000],
+  "portsAttributes": {
+    "8741": { "label": "Erebus API", "onAutoForward": "notify" },
+    "3000": { "label": "Web UI Dev", "onAutoForward": "openBrowser" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "ms-python.vscode-pylance"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      }
+    }
+  }
+}
