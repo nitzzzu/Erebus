@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Plus, User, Bot, FolderOpen, X } from "lucide-react";
+import { Send, User, Bot, FolderOpen, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -102,64 +102,35 @@ export default function ChatPage() {
             </button>
           </div>
         )}
-        {/* Header */}
-        <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6 shrink-0">
-          <div>
-            <h1 className="text-lg font-semibold">Chat</h1>
-            <p className="text-xs text-muted-foreground">
-              {model ? `Model: ${model}` : "Talk to Erebus — your AI agent"}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Workspace picker */}
+        {/* Workspace / explorer toolbar — only shown when a workspace is selected */}
+        {(workspaces.length > 0 || activeWorkspace) && (
+          <div className="flex items-center gap-2 border-b px-4 py-2 shrink-0">
             {workspaces.length > 0 && (
-              <div className="relative">
-                {activeWorkspace && explorerOpen ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExplorerClose}
-                    title="Close file explorer"
-                  >
-                    <X className="mr-1.5 h-3.5 w-3.5" />
-                    {activeWorkspace}
-                  </Button>
-                ) : (
-                  <select
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    value={activeWorkspace ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v) handleWorkspaceSelect(v);
-                    }}
-                  >
-                    <option value="">Workspace…</option>
-                    {workspaces.map((ws) => (
-                      <option key={ws.name} value={ws.name}>
-                        {ws.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
+              activeWorkspace && explorerOpen ? (
+                <Button variant="outline" size="sm" onClick={handleExplorerClose}>
+                  <X className="mr-1.5 h-3.5 w-3.5" />
+                  {activeWorkspace}
+                </Button>
+              ) : (
+                <select
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  value={activeWorkspace ?? ""}
+                  onChange={(e) => { const v = e.target.value; if (v) handleWorkspaceSelect(v); }}
+                >
+                  <option value="">Workspace…</option>
+                  {workspaces.map((ws) => (
+                    <option key={ws.name} value={ws.name}>{ws.name}</option>
+                  ))}
+                </select>
+              )
             )}
-            {/* Open explorer toggle when workspace selected but panel closed */}
             {activeWorkspace && !explorerOpen && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setExplorerOpen(true)}
-                title="Open file explorer"
-              >
+              <Button variant="outline" size="sm" onClick={() => setExplorerOpen(true)} title="Open file explorer">
                 <FolderOpen className="h-3.5 w-3.5" />
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={newSession}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              New Chat
-            </Button>
           </div>
-        </div>
+        )}
 
         {/* Messages */}
         <ScrollArea className="flex-1 p-4 sm:p-6">

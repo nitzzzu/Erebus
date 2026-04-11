@@ -287,7 +287,16 @@ export function Sidebar() {
         <Button variant="ghost" size="icon" onClick={() => setOpen(!open)}>
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
-        <span className="ml-3 text-lg font-bold">⚡ Erebus</span>
+        <span className="ml-3 flex-1 text-lg font-bold">⚡ Erebus</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => { newSession(); setOpen(false); }}
+          title="New Chat"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
       </div>
 
       {/* Backdrop */}
