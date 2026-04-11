@@ -133,7 +133,10 @@ class WebFetchTools(Toolkit):
                 pass
             # Plain text response
             if len(body) > max_len:
-                body = body[:max_len] + f"\n\n[Content truncated at {max_len} characters.]"
+                body = (
+                    body[:max_len]
+                    + f"\n\n[Content truncated at {max_len} characters.]"
+                )
             return body
         return f"Failed to fetch {url} ({status}): {body[:500]}"
 

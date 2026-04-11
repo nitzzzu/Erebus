@@ -228,12 +228,12 @@ export default function ChatPage() {
                       {/* Render inline content blocks in order (tool calls interleaved with text) */}
                       {msg.content_blocks && msg.content_blocks.length > 0 ? (
                         <div className="text-sm leading-relaxed space-y-1">
-                          {msg.content_blocks.map((block, bi) =>
+                          {msg.content_blocks.map((block, blockIndex) =>
                             block.type === "tool" ? (
-                              <ToolCallCard key={bi} tool={block.tool} />
+                              <ToolCallCard key={blockIndex} tool={block.tool} />
                             ) : (
                               block.text && (
-                                <MarkdownContent key={bi} content={block.text} />
+                                <MarkdownContent key={blockIndex} content={block.text} />
                               )
                             )
                           )}
@@ -263,15 +263,15 @@ export default function ChatPage() {
                 <div className="min-w-0 flex-1 pt-1">
                   {streamBlocks.length > 0 ? (
                     <div className="text-sm leading-relaxed space-y-1">
-                      {streamBlocks.map((block, bi) =>
+                      {streamBlocks.map((block, blockIndex) =>
                         block.type === "tool" ? (
-                          <ToolCallCard key={bi} tool={block.tool} />
+                          <ToolCallCard key={blockIndex} tool={block.tool} />
                         ) : (
                           block.text && (
-                            <div key={bi}>
+                            <div key={blockIndex}>
                               <MarkdownContent content={block.text} />
                               {/* Show cursor only after last text block */}
-                              {bi === streamBlocks.length - 1 && (
+                              {blockIndex === streamBlocks.length - 1 && (
                                 <span className="inline-block h-4 w-0.5 animate-pulse bg-primary ml-0.5" />
                               )}
                             </div>
