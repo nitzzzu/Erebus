@@ -54,7 +54,7 @@ export interface SessionFull {
   session_id: string;
   title: string;
   model: string;
-  messages: { role: string; content: string }[];
+  messages: { role: string; content: string; content_blocks?: ContentBlock[] }[];
   created_at: number;
   updated_at: number;
   pinned: boolean;
