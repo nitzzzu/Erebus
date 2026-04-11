@@ -320,3 +320,30 @@ export function readWorkspaceFile(workspaceName: string, path: string) {
     `/api/workspaces/${encodeURIComponent(workspaceName)}/file?path=${encodeURIComponent(path)}`
   );
 }
+
+export function createWorkspace(name: string, path: string, description = "") {
+  return request<Workspace>("/api/workspaces", {
+    method: "POST",
+    body: JSON.stringify({ name, path, description }),
+  });
+}
+
+export function activateWorkspace(name: string, sessionId: string) {
+  return request<{ activated: boolean; workspace: Workspace; session_id: string }>(
+    `/api/workspaces/${encodeURIComponent(name)}/activate`,
+    { method: "POST", body: JSON.stringify({ session_id: sessionId }) }
+  );
+}
+
+export function getSessionWorkspace(sessionId: string) {
+  return request<{ workspace: Workspace | null }>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/workspace`
+  );
+}
+
+export function deactivateWorkspace(sessionId: string) {
+  return request<{ deactivated: boolean }>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/workspace`,
+    { method: "DELETE" }
+  );
+}

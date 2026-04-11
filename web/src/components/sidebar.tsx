@@ -17,12 +17,16 @@ import {
   Pencil,
   Check,
   Bell,
+  FolderOpen,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useChat } from "@/store/chat-context";
+import { listWorkspaces, createWorkspace, type Workspace } from "@/lib/api-client";
 
 const navItems = [
   { href: "/chat", label: "Chat", icon: MessageSquare },
@@ -115,6 +119,162 @@ function SessionItem({
   );
 }
 
+function WorkspacePicker() {
+  const { state, setWorkspace } = useChat();
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [expanded, setExpanded] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPath, setNewPath] = useState("");
+  const [createError, setCreateError] = useState("");
+
+  const reload = useCallback(() => {
+    listWorkspaces()
+      .then(({ workspaces }) => setWorkspaces(workspaces))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const handleActivate = useCallback(
+    async (name: string) => {
+      if (!state.currentSessionId || busy) return;
+      setBusy(true);
+      try {
+        if (state.activeWorkspace?.name === name) {
+          await setWorkspace(null);
+        } else {
+          await setWorkspace(name);
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [state.currentSessionId, state.activeWorkspace, setWorkspace, busy]
+  );
+
+  const handleCreate = useCallback(async () => {
+    const name = newName.trim();
+    const path = newPath.trim();
+    if (!name || !path) { setCreateError("Name and path are required."); return; }
+    setBusy(true);
+    setCreateError("");
+    try {
+      await createWorkspace(name, path);
+      setNewName("");
+      setNewPath("");
+      setCreating(false);
+      reload();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : "Failed to create workspace.");
+    } finally {
+      setBusy(false);
+    }
+  }, [newName, newPath, reload]);
+
+  return (
+    <div className="border-t px-3 pt-3">
+      <div className="mb-1.5 flex items-center justify-between px-2">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        >
+          <FolderOpen className="h-3 w-3" />
+          Workspaces
+          {expanded ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
+        </button>
+        <button
+          onClick={() => { setCreating((v) => !v); setCreateError(""); }}
+          className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          title="New workspace"
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      </div>
+
+      {creating && (
+        <div className="mb-2 space-y-1.5 rounded-lg border bg-card p-2">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Name"
+            className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+          />
+          <input
+            value={newPath}
+            onChange={(e) => setNewPath(e.target.value)}
+            placeholder="Path (e.g. /home/user/project)"
+            className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+            onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") setCreating(false); }}
+          />
+          {createError && <p className="text-[10px] text-destructive">{createError}</p>}
+          <div className="flex gap-1">
+            <button
+              onClick={handleCreate}
+              disabled={busy}
+              className="flex-1 rounded bg-primary px-2 py-1 text-[10px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              Create
+            </button>
+            <button
+              onClick={() => { setCreating(false); setCreateError(""); }}
+              className="flex-1 rounded border px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {expanded && (
+        <div className="space-y-0.5 pb-2">
+          {workspaces.length === 0 && !creating && (
+            <p className="px-2 text-[10px] text-muted-foreground">
+              No workspaces yet. Click + to create one.
+            </p>
+          )}
+          {workspaces.map((ws) => {
+            const isActive = state.activeWorkspace?.name === ws.name;
+            return (
+              <button
+                key={ws.name}
+                onClick={() => handleActivate(ws.name)}
+                disabled={!state.currentSessionId || busy}
+                title={ws.path}
+                className={cn(
+                  "group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50",
+                  isActive
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground"
+                )}
+              >
+                <FolderOpen
+                  className={cn(
+                    "h-3 w-3 shrink-0",
+                    isActive ? "text-primary" : "text-muted-foreground"
+                  )}
+                />
+                <span className="flex-1 truncate">{ws.name}</span>
+                {isActive && <Check className="h-3 w-3 shrink-0 text-primary" />}
+              </button>
+            );
+          })}
+          {!state.currentSessionId && workspaces.length > 0 && (
+            <p className="px-2 text-[10px] text-muted-foreground">
+              Start a chat to activate a workspace
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -184,6 +344,9 @@ export function Sidebar() {
             </Link>
           ))}
         </nav>
+
+        {/* Workspace picker */}
+        <WorkspacePicker />
 
         {/* Session list */}
         {state.sessions.length > 0 && (

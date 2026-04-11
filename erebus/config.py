@@ -26,6 +26,14 @@ class ErebusSettings(BaseSettings):
 
     # --- Data & Storage ---
     data_dir: Path = Field(default_factory=_default_data_dir)
+    workspaces_dir: Optional[Path] = Field(
+        default=None,
+        description="Directory scanned for workspace subdirectories (default: DATA_DIR/workspaces)",
+    )
+
+    @property
+    def effective_workspaces_dir(self) -> Path:
+        return self.workspaces_dir if self.workspaces_dir is not None else self.data_dir / "workspaces"
 
     @property
     def db_path(self) -> str:

@@ -13,12 +13,16 @@ import {
   type ToolCallEvent,
   type ContentBlock,
   type SessionCompact,
+  type Workspace,
   startChatStream,
   connectChatStream,
   listSessions,
   getSession,
   deleteSessionApi,
   renameSession,
+  activateWorkspace,
+  deactivateWorkspace,
+  getSessionWorkspace,
 } from "@/lib/api-client";
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -32,6 +36,7 @@ interface ChatState {
   error: string | null;
   /** Ordered interleaved content blocks built during the current stream. */
   streamBlocks: ContentBlock[];
+  activeWorkspace: Workspace | null;
 }
 
 const initialState: ChatState = {
@@ -42,6 +47,7 @@ const initialState: ChatState = {
   model: "",
   error: null,
   streamBlocks: [],
+  activeWorkspace: null,
 };
 
 // ── Actions ───────────────────────────────────────────────────────────────
@@ -58,7 +64,8 @@ type ChatAction =
   | { type: "TOOL_END"; name: string; result: string }
   | { type: "STREAM_DONE"; sessionId: string; model: string; title: string }
   | { type: "STREAM_ERROR"; message: string }
-  | { type: "CLEAR_MESSAGES" };
+  | { type: "CLEAR_MESSAGES" }
+  | { type: "SET_WORKSPACE"; workspace: Workspace | null };
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
@@ -193,6 +200,9 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         error: null,
       };
 
+    case "SET_WORKSPACE":
+      return { ...state, activeWorkspace: action.workspace };
+
     default:
       return state;
   }
@@ -208,6 +218,7 @@ interface ChatContextValue {
   newSession: () => void;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSessionAction: (sessionId: string, title: string) => Promise<void>;
+  setWorkspace: (name: string | null) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -226,13 +237,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const switchSession = useCallback(async (sessionId: string) => {
     try {
-      const { session } = await getSession(sessionId);
+      const [{ session }, { workspace }] = await Promise.all([
+        getSession(sessionId),
+        getSessionWorkspace(sessionId),
+      ]);
       const msgs: ChatMessage[] = session.messages.map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
         content_blocks: m.content_blocks,
       }));
       dispatch({ type: "SET_CURRENT_SESSION", sessionId, messages: msgs });
+      dispatch({ type: "SET_WORKSPACE", workspace: workspace ?? null });
     } catch {
       dispatch({ type: "SET_ERROR", error: "Failed to load session" });
     }
@@ -275,6 +290,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
     },
     [state.sessions]
+  );
+
+  const setWorkspace = useCallback(
+    async (name: string | null) => {
+      const sessionId = state.currentSessionId;
+      if (!sessionId) return;
+      try {
+        if (name === null) {
+          await deactivateWorkspace(sessionId);
+          dispatch({ type: "SET_WORKSPACE", workspace: null });
+        } else {
+          const { workspace } = await activateWorkspace(name, sessionId);
+          dispatch({ type: "SET_WORKSPACE", workspace });
+        }
+      } catch {
+        dispatch({ type: "SET_ERROR", error: "Failed to set workspace" });
+      }
+    },
+    [state.currentSessionId]
   );
 
   const sendChat = useCallback(
@@ -403,6 +437,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         newSession,
         deleteSession: deleteSessionAction,
         renameSessionAction,
+        setWorkspace,
       }}
     >
       {children}

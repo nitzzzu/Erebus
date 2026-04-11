@@ -147,6 +147,27 @@ class WorkspaceManager:
             self._save(data)
         return self.get(name)
 
+    # ── Auto-discovery ───────────────────────────────────────────────────────
+
+    def sync_from_dir(self, workspaces_dir: Path) -> list[Workspace]:
+        """Scan *workspaces_dir* for subdirectories and auto-register any that
+        are not already in the store.  If no workspaces exist at all, a default
+        ``main`` workspace is created.  Returns the full merged workspace list."""
+        workspaces_dir.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            data = self._load()
+            for entry in sorted(workspaces_dir.iterdir()):
+                if entry.is_dir() and entry.name not in data:
+                    ws = Workspace(name=entry.name, path=str(entry.resolve()))
+                    data[entry.name] = ws.as_dict()
+            if not data:
+                main_path = workspaces_dir / "main"
+                main_path.mkdir(exist_ok=True)
+                ws = Workspace(name="main", path=str(main_path.resolve()), description="Default workspace")
+                data["main"] = ws.as_dict()
+            self._save(data)
+        return self.list()
+
     # ── Session workspace tracking ────────────────────────────────────────────
 
     def set_session_workspace(self, session_id: str, name: str) -> None:

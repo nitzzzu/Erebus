@@ -665,11 +665,13 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
 
     @app.get("/api/workspaces")
     async def list_workspaces():
-        """List all configured workspaces."""
+        """List all configured workspaces, auto-registering any subdirectories
+        found in the configured workspaces directory."""
         from erebus.workspace.manager import WorkspaceManager
 
         mgr = WorkspaceManager(settings.data_dir)
-        return {"workspaces": [w.as_dict() for w in mgr.list()]}
+        workspaces = mgr.sync_from_dir(settings.effective_workspaces_dir)
+        return {"workspaces": [w.as_dict() for w in workspaces]}
 
     @app.post("/api/workspaces")
     async def create_workspace(req: WorkspaceCreateRequest):
@@ -741,6 +743,15 @@ def create_api_app(settings: Optional[ErebusSettings] = None) -> FastAPI:
         if ws is None:
             return {"workspace": None}
         return {"workspace": ws.as_dict()}
+
+    @app.delete("/api/sessions/{session_id}/workspace")
+    async def deactivate_session_workspace(session_id: str):
+        """Remove the workspace association for a session."""
+        from erebus.workspace.manager import WorkspaceManager
+
+        mgr = WorkspaceManager(settings.data_dir)
+        mgr.clear_session_workspace(session_id)
+        return {"deactivated": True}
 
     @app.get("/api/workspaces/{name}/files")
     async def list_workspace_files(name: str, path: str = ""):
