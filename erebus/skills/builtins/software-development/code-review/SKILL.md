@@ -1,59 +1,128 @@
 ---
 name: code-review
-description: Pre-commit code review pipeline with static analysis, security scanning, and automated fix suggestions.
+description: Use when completing tasks, implementing major features, or before merging — request a thorough review that checks spec compliance, code quality, security, and tests.
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
   author: erebus
   tags: ["software-development", "code-review", "quality", "security"]
 ---
 
-# Code Review Pipeline
+# Requesting Code Review
 
-Use this skill for thorough code review before commits or merges.
+Request a thorough code review to catch issues before they cascade.
 
-## When to Use
+**Core principle:** Review early, review often. Catch issues while they're cheap to fix.
 
-- User wants a code review of their changes
-- Before committing or pushing code
-- User asks for feedback on code quality
-- User wants security analysis of changes
+## When to Request
+
+**Mandatory:**
+- After completing each task in subagent-driven development
+- After completing a major feature
+- Before merging to main/master
+
+**Optional but valuable:**
+- When stuck (fresh perspective helps)
+- Before a large refactor (baseline check)
+- After fixing a complex bug
+
+## How to Request
+
+**1. Get git SHAs:**
+
+```bash
+BASE_SHA=$(git rev-parse HEAD~1)  # or: git rev-parse origin/main
+HEAD_SHA=$(git rev-parse HEAD)
+git log --oneline $BASE_SHA..$HEAD_SHA
+```
+
+**2. Provide to reviewer:**
+
+- What was implemented (what does it do?)
+- Plan or requirements it should meet
+- Base SHA (starting commit)
+- Head SHA (ending commit)
+- Brief description
 
 ## Review Checklist
 
-### 1. Correctness
+A thorough review covers all of these:
+
+### Correctness
 - Logic errors, off-by-one, null handling
 - Edge cases and boundary conditions
 - Error handling completeness
+- Does behavior match requirements?
 
-### 2. Security
+### Security
 - Input validation and sanitization
 - Authentication and authorization
-- Secrets exposure, injection vulnerabilities
+- No secrets or credentials in code
+- Injection vulnerabilities
 
-### 3. Code Quality
-- Naming conventions and readability
-- DRY principle, code duplication
+### Code Quality
+- Naming clarity and readability
+- DRY principle — no unnecessary duplication
 - Function length and complexity
+- Code that's easy to change
 
-### 4. Testing
+### Testing
 - Test coverage for new/changed code
-- Edge case testing
-- Integration test needs
+- Tests verify behavior (not just implementation)
+- Edge cases tested
+- No tests deleted to make suite pass
 
-### 5. Performance
-- Algorithm complexity
+### Performance
+- Algorithm complexity appropriate for data size
 - Database query efficiency
 - Memory usage patterns
 
-### 6. Documentation
-- Docstrings and comments
-- API documentation updates
-- README changes if needed
+### Documentation
+- Complex logic commented
+- Public APIs documented
+- README updated if behavior changed
 
-## Process
+## Acting on Feedback
 
-1. **Diff**: Get the code changes (git diff or provided code)
-2. **Static Analysis**: Run linters and type checkers
-3. **Security Scan**: Check for common vulnerabilities
-4. **Review**: Apply the checklist systematically
-5. **Report**: Provide findings with severity and fix suggestions
+**Severity levels:**
+
+| Level | Action |
+|-------|--------|
+| **Critical** | Fix immediately before proceeding |
+| **Important** | Fix before moving to next task |
+| **Minor** | Note for later; don't block progress |
+
+**If reviewer is wrong:**
+- Push back with technical reasoning
+- Reference working tests or code
+- Ask for clarification
+
+**If you agree with feedback:**
+- Fix it and show the diff — no need to thank the reviewer
+- Test each fix individually before the next
+
+## Integration
+
+**Part of subagent-driven development:** Review after EACH task — catch issues before they compound.
+
+**Standalone use:** Review before merging — ensure the full feature meets requirements.
+
+**After review:** Use **receiving-code-review** skill to handle feedback properly.
+
+## Example Request
+
+```
+Reviewing Task 3: Add user authentication middleware
+
+What was implemented:
+  JWT validation middleware, token refresh logic, and associated tests
+
+Requirements:
+  Task 3 from docs/plans/auth-feature-plan.md
+
+BASE_SHA: a7981ec
+HEAD_SHA: 3df7661
+
+Description:
+  Added JWTMiddleware class with validate(), refresh(), and revoke() methods.
+  4 unit tests, 1 integration test covering happy path and token expiry.
+```
