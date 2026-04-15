@@ -53,3 +53,34 @@ Superpowers also has significantly richer versions of the 5 existing skills.
 
 #### Phase 3 — Verify
 - [x] Task 13 — run ruff lint to verify no Python breakage (12 pre-existing errors in Python files, none in skill files)
+
+## Feature: zx-style REPL Utilities — 2026-04-15
+
+### Requirements
+Add a `run_zx` tool to `REPLTools` that executes JavaScript code in a Node.js
+environment pre-loaded with `zx`/Claude-Code-style utility functions:
+- `sh(cmd, ms?)` — run a shell command, optional timeout in ms
+- `cat(path, off?, lim?)` — read file content, optional line offset and limit
+- `put(path, content)` — write a file
+- `rg(pat, path?, opts?)` — ripgrep-style search, returns match text
+- `rgf(pat, path?, glob?)` — ripgrep-style search, returns file paths
+- `gl(pat, path?)` — glob for file paths (uses Node.js 22+ fs.globSync)
+- `gh(args)` — run the `gh` CLI
+- `o` — output accumulator object (auto-printed as JSON if populated)
+
+Fallback: `rg`/`rgf` use `grep -rP` when `rg` binary is not on PATH.
+
+### Tech Stack / Dependencies
+No new dependencies.  Node.js must be on PATH (already required by existing `run_node`).
+
+### Testing Strategy
+Manual functional verification via `node` subprocess. No separate test suite
+exists; verify with `ruff check erebus/` for Python correctness.
+
+### Phases
+
+#### Phase 1 — Implementation
+- [x] Task 1 — add `run_zx` method with JS preamble — affects: erebus/tools/repl.py (REPLTools)
+
+#### Phase 2 — Verify
+- [x] Task 2 — run ruff lint to confirm no Python breakage (same 12 pre-existing errors, 0 new)
