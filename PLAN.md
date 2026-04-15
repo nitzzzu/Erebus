@@ -84,3 +84,44 @@ exists; verify with `ruff check erebus/` for Python correctness.
 
 #### Phase 2 — Verify
 - [x] Task 2 — run ruff lint to confirm no Python breakage (same 12 pre-existing errors, 0 new)
+
+## Feature: RTK Integration & Usage Analytics — 2026-04-15
+
+### Requirements
+Borrow the best ideas from https://github.com/rtk-ai/rtk and integrate them into
+Erebus tooling where they perfectly fit.  RTK is a Rust CLI proxy that reduces LLM
+token consumption 60-90% via smart output filtering, deduplication, and usage analytics.
+
+Key ideas adapted for Erebus:
+1. **Smart output compression in `run_shell`** — RTK-style deduplication, test-failure-only
+   filtering, git compact output, and blank-line normalization via a new `compress=True` option.
+2. **`run_rtk` tool** — routes commands through the `rtk` binary when it is on PATH;
+   falls back to `run_shell` transparently.
+3. **ccusage + rtk helpers in `run_zx`** — extend `_ZX_PREAMBLE` with `ccusage(period?)`
+   and `rtk(cmd)` JS helpers for analytics scripting.
+4. **`usage_report` method** — comprehensive REPL-based usage analytics that calls ccusage
+   to produce a spending/token report (like `rtk gain` / `rtk cc-economics`).
+5. **Token-efficiency skill** — SKILL.md documenting how to use the above tools for
+   token-efficient workflows.
+
+### Tech Stack / Dependencies
+No new dependencies. `rtk` binary and `ccusage` npm package are optional; all features
+degrade gracefully when they are not installed.
+
+### Testing Strategy
+Manual functional verification + `ruff check erebus/` for Python correctness.
+No existing test suite to run.
+
+### Phases
+
+#### Phase 1 — Core Compression + RTK passthrough
+- [x] Task 1 — add `_compress_output()` helper + `compress` param to `run_shell` — affects: erebus/tools/repl.py (REPLTools)
+- [x] Task 2 — add `run_rtk(command, timeout?)` method — affects: erebus/tools/repl.py (REPLTools)
+
+#### Phase 2 — ZX Preamble + Usage Report
+- [x] Task 3 — extend `_ZX_PREAMBLE` with `ccusage(period?)` and `rtk(cmd)` JS helpers — affects: erebus/tools/repl.py (_ZX_PREAMBLE)
+- [x] Task 4 — add `usage_report(since_days?)` method — affects: erebus/tools/repl.py (REPLTools)
+
+#### Phase 3 — Skill + Verify
+- [x] Task 5 — create token-efficiency skill — affects: erebus/skills/builtins/ai-tooling/token-efficiency/SKILL.md
+- [x] Task 6 — run ruff lint to verify no Python breakage (18 errors: 12 pre-existing + 6 new E501 in embedded JS strings inside usage_report, no logic errors)
