@@ -114,7 +114,7 @@ def _compress_output(cmd: str, raw: str) -> str:
         else:
             deduped.append(blank_normalised[-1])
 
-    # 2. Test filtering: keep only failure/error lines + summary.
+    # 3. Test filtering: keep only failure/error lines + summary.
     if _TEST_CMD_RE.search(cmd):
         filtered = [ln for ln in deduped if _TEST_FAIL_KEEP_RE.search(ln)]
         # Always keep the last non-blank line (usually the summary).
@@ -125,7 +125,7 @@ def _compress_output(cmd: str, raw: str) -> str:
             filtered.append(last_non_blank)
         deduped = filtered if filtered else deduped
 
-    # 3. Git compact: trim to first meaningful result line.
+    # 4. Git compact: trim to first meaningful result line.
     if _GIT_COMPACT_RE.search(cmd):
         first = next((ln for ln in deduped if ln.strip()), None)
         if first:
@@ -478,8 +478,8 @@ class REPLTools(Toolkit):
         if shutil.which("rtk"):
             return self.run_shell(f"rtk {command}", timeout=timeout, cwd=cwd)
         # Graceful fallback: run directly with Python-native compression.
-        result = self.run_shell(command, timeout=timeout, cwd=cwd, compress=True)
-        return f"[rtk not installed — used built-in compression]\n{result}"
+        logger.debug("rtk binary not found; falling back to run_shell(compress=True)")
+        return self.run_shell(command, timeout=timeout, cwd=cwd, compress=True)
 
     def usage_report(
         self,
@@ -515,8 +515,7 @@ class REPLTools(Toolkit):
         js_code = f"""
 // ── Comprehensive usage report ──────────────────────────────────────────────
 const sinceDate = (() => {{
-  const d = new Date();
-  d.setDate(d.getDate() - {since_days});
+  const d = new Date(Date.now() - {since_days} * 24 * 60 * 60 * 1000);
   return d.toISOString().slice(0, 10).replace(/-/g, '');
 }})();
 
