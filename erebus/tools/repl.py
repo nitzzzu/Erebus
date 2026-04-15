@@ -6,7 +6,8 @@ the ShellTools bash with a persistent process instead.
 
 RTK-inspired output compression is available on ``run_shell`` via the
 ``compress=True`` parameter, and as a transparent passthrough via
-``run_rtk`` when the ``rtk`` binary is on PATH.
+``run_rtk`` when the ``rtk`` binary is on PATH or built locally from
+the bundled ``ptk/`` source directory.
 """
 
 from __future__ import annotations
@@ -26,6 +27,31 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 30
 _MAX_OUTPUT = 10_000
+
+# ---------------------------------------------------------------------------
+# Local RTK binary discovery (ptk/ source directory)
+# ---------------------------------------------------------------------------
+
+# Path to the bundled rtk source directory (ptk/) relative to the repo root.
+_PTK_DIR = Path(__file__).resolve().parent.parent.parent / "ptk"
+
+
+def _find_rtk_binary() -> Optional[str]:
+    """Locate the ``rtk`` binary.
+
+    Search order:
+    1. System PATH (``shutil.which("rtk")``)
+    2. Locally-built binary at ``ptk/target/release/rtk``
+
+    Returns the absolute path to the binary, or ``None`` if not found.
+    """
+    system_rtk = shutil.which("rtk")
+    if system_rtk:
+        return system_rtk
+    local_rtk = _PTK_DIR / "target" / "release" / "rtk"
+    if local_rtk.is_file() and os.access(local_rtk, os.X_OK):
+        return str(local_rtk)
+    return None
 
 # ---------------------------------------------------------------------------
 # RTK-inspired output compression helpers
@@ -248,13 +274,16 @@ function ccusage(args) {
 }
 
 // rtk(cmd) – run a command through the rtk binary for compressed token output.
-// If rtk is not installed the command is run directly.
+// Checks system PATH first, then the local ptk/ build directory (via PTK_BIN env).
 // See https://github.com/rtk-ai/rtk for installation.
-const _hasRtk = (() => {
-  try { execSync('rtk --version', {stdio: 'ignore'}); return true; } catch { return false; }
+const _rtkBin = (() => {
+  try { execSync('rtk --version', {stdio: 'ignore'}); return 'rtk'; } catch {}
+  const localBin = process.env.PTK_BIN || '';
+  if (localBin) { try { fs.accessSync(localBin, fs.constants.X_OK); return localBin; } catch {} }
+  return null;
 })();
 function rtk(cmd) {
-  return sh(_hasRtk ? 'rtk ' + cmd : cmd);
+  return sh(_rtkBin ? _rtkBin + ' ' + cmd : cmd);
 }
 """.lstrip()
 
@@ -276,6 +305,7 @@ class REPLTools(Toolkit):
         self.register(self.run_zx)
         self.register(self.run_rtk)
         self.register(self.usage_report)
+        self.register(self.build_rtk)
 
     def _cwd(self) -> Optional[str]:
         if self._workspace_path and Path(self._workspace_path).exists():
@@ -447,8 +477,12 @@ class REPLTools(Toolkit):
         common developer tools (``git``, ``pytest``, ``cargo test``,
         ``npm test``, ``ls``, ``grep``, etc.).
 
-        When ``rtk`` is not installed this method transparently falls back to
-        ``run_shell`` with ``compress=True`` so the caller always gets some
+        The binary is discovered in this order:
+        1. System PATH (``rtk``)
+        2. Locally-built binary at ``ptk/target/release/rtk``
+
+        When ``rtk`` is not found anywhere this method transparently falls back
+        to ``run_shell`` with ``compress=True`` so the caller always gets some
         form of compressed output.
 
         Parameters
@@ -475,8 +509,9 @@ class REPLTools(Toolkit):
             output = repl.run_rtk("pytest tests/ -x")
             output = repl.run_rtk("cargo test")
         """
-        if shutil.which("rtk"):
-            return self.run_shell(f"rtk {command}", timeout=timeout, cwd=cwd)
+        rtk_bin = _find_rtk_binary()
+        if rtk_bin:
+            return self.run_shell(f"{rtk_bin} {command}", timeout=timeout, cwd=cwd)
         # Graceful fallback: run directly with Python-native compression.
         logger.debug("rtk binary not found; falling back to run_shell(compress=True)")
         return self.run_shell(command, timeout=timeout, cwd=cwd, compress=True)
@@ -579,6 +614,48 @@ console.log(report);
 """
         return self.run_zx(js_code, timeout=max(self._timeout, 60))
 
+    def build_rtk(
+        self,
+        release: bool = True,
+        timeout: int = 300,
+    ) -> str:
+        """Build the ``rtk`` binary from the bundled ``ptk/`` source directory.
+
+        Requires ``cargo`` (Rust toolchain) to be installed.  The built binary
+        is placed at ``ptk/target/release/rtk`` (or ``ptk/target/debug/rtk``
+        when *release* is ``False``) and is automatically discovered by
+        ``run_rtk()`` and the ``rtk()`` helper in ``run_zx()``.
+
+        Parameters
+        ----------
+        release:
+            Build in release mode (optimised, slower to compile).  Default
+            ``True``.
+        timeout:
+            Maximum build time in seconds (default 300 — Rust builds can be
+            slow).
+
+        Returns
+        -------
+        str
+            Build output or an error message.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            result = repl.build_rtk()
+            # Then run commands through the freshly-built binary:
+            output = repl.run_rtk("git status")
+        """
+        if not _PTK_DIR.is_dir():
+            return f"Error: ptk source directory not found at {_PTK_DIR}"
+        if not shutil.which("cargo"):
+            return "Error: cargo (Rust toolchain) is not installed. Install from https://rustup.rs/"
+        profile = "--release" if release else ""
+        cmd = f"cargo build {profile}".strip()
+        return self.run_shell(cmd, timeout=timeout, cwd=str(_PTK_DIR))
+
     def run_zx(
         self,
         code: str,
@@ -655,6 +732,11 @@ console.log(report);
         effective_timeout = timeout or self._timeout
         old_timeout = self._timeout
         self._timeout = effective_timeout
-        result = self._execute(["node", "-"], full_code)
+        # Pass PTK_BIN env so the JS preamble can find the local rtk binary.
+        ptk_env: Optional[dict] = None
+        local_rtk = _PTK_DIR / "target" / "release" / "rtk"
+        if local_rtk.is_file():
+            ptk_env = {"PTK_BIN": str(local_rtk)}
+        result = self._execute(["node", "-"], full_code, env=ptk_env)
         self._timeout = old_timeout
         return result

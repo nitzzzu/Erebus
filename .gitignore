@@ -28,3 +28,6 @@ tmp/
 .DS_Store
 Thumbs.db
 *.local.json
+
+# RTK (ptk/) build artifacts
+ptk/target/

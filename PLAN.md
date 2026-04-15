@@ -125,3 +125,33 @@ No existing test suite to run.
 #### Phase 3 — Skill + Verify
 - [x] Task 5 — create token-efficiency skill — affects: erebus/skills/builtins/ai-tooling/token-efficiency/SKILL.md
 - [x] Task 6 — run ruff lint to verify no Python breakage (18 errors: 12 pre-existing + 6 new E501 in embedded JS strings inside usage_report, no logic errors)
+
+## Feature: Local RTK (ptk/) Integration — 2026-04-15
+
+### Requirements
+Clone the rtk-ai/rtk repository into a `ptk/` folder in the Erebus project root and
+integrate the local rtk binary into the REPL tools. When the system-level `rtk` is not
+on PATH, the REPL tools should discover and use the locally-built binary from
+`ptk/target/release/rtk`. A convenience method to build rtk from source is also provided.
+
+### Tech Stack / Dependencies
+- rtk v0.36.0 (Rust source in ptk/, built with `cargo build --release`)
+- No new Python dependencies
+
+### Testing Strategy
+- Verify with `ruff check erebus/` for Python correctness
+- Manual verification that local binary discovery works
+
+### Phases
+
+#### Phase 1 — Clone & .gitignore
+- [x] Task 1 — download rtk source into ptk/ — affects: ptk/ (entire directory)
+- [x] Task 2 — update .gitignore to exclude ptk build artifacts — affects: .gitignore
+
+#### Phase 2 — REPL Integration
+- [x] Task 3 — add `_find_rtk_binary()` helper and update `run_rtk()` to use local ptk binary — affects: erebus/tools/repl.py (REPLTools)
+- [x] Task 4 — update `_ZX_PREAMBLE` to check local ptk binary path — affects: erebus/tools/repl.py (_ZX_PREAMBLE)
+- [x] Task 5 — add `build_rtk()` method to build rtk from ptk/ source — affects: erebus/tools/repl.py (REPLTools)
+
+#### Phase 3 — Verify
+- [x] Task 6 — run ruff lint to verify no Python breakage (18 errors: same 12 pre-existing + 6 E501 in embedded JS, 0 new)
