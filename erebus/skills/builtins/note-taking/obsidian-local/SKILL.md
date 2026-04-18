@@ -41,7 +41,7 @@ print(results)
 content = obsidian_read("Projects/Alpha/notes.md")
 print(content)
 
-# Create a daily note
+# Create a daily note (datetime is available via Python stdlib)
 from datetime import date
 today = date.today().isoformat()
 obsidian_write(f"Daily/{today}.md", f"# {today}\n\n- [ ] Morning review\n")

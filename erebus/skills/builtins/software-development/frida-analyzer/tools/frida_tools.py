@@ -29,6 +29,15 @@ def _run(cmd: list[str], timeout: int = 30) -> str:
         return f"Error: {exc}"
 
 
+def _device_flags(device: str) -> list[str]:
+    """Return Frida CLI flags for a device specifier."""
+    if device == "usb":
+        return ["-U"]
+    if device == "local":
+        return ["-D"]
+    return ["-D", device]
+
+
 def frida_devices() -> str:
     """List connected Frida devices.
 
@@ -53,8 +62,8 @@ def frida_apps(device: str = "usb") -> list[str]:
     list[str]
         App identifiers.
     """
-    flag = "-U" if device == "usb" else "-D" if device == "local" else f"-D {device}"
-    output = _run(["frida-ps", flag, "-ai"])
+    flags = _device_flags(device)
+    output = _run(["frida-ps"] + flags + ["-ai"])
     return output.split("\n")
 
 
@@ -79,8 +88,8 @@ def frida_spawn(
     str
         Spawn result.
     """
-    flag = "-U" if device == "usb" else f"-D {device}"
-    cmd = ["frida", flag, "-f", package, "--no-pause"]
+    flags = _device_flags(device)
+    cmd = ["frida"] + flags + ["-f", package, "--no-pause"]
     if script:
         cmd.extend(["-l", script])
     return _run(cmd, timeout=15)
@@ -107,8 +116,8 @@ def frida_attach(
     str
         Attach result.
     """
-    flag = "-U" if device == "usb" else f"-D {device}"
-    cmd = ["frida", flag, target]
+    flags = _device_flags(device)
+    cmd = ["frida"] + flags + [target]
     if script:
         cmd.extend(["-l", script])
     return _run(cmd, timeout=15)
@@ -192,9 +201,9 @@ def frida_trace(
     str
         Trace output.
     """
-    flag = "-U" if device == "usb" else f"-D {device}"
+    flags = _device_flags(device)
     return _run(
-        ["frida-trace", flag, "-i", pattern, "-f", package],
+        ["frida-trace"] + flags + ["-i", pattern, "-f", package],
         timeout=20,
     )
 
@@ -228,9 +237,9 @@ def frida_run_script(
     )
     with open(script_path, "w") as f:
         f.write(script_code)
-    flag = "-U" if device == "usb" else f"-D {device}"
+    flags = _device_flags(device)
     return _run(
-        ["frida", flag, "-f", target, "-l", script_path, "--no-pause"],
+        ["frida"] + flags + ["-f", target, "-l", script_path, "--no-pause"],
         timeout=20,
     )
 
