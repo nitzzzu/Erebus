@@ -174,3 +174,34 @@ Match existing test strategy (no automated test suite exists).
 
 #### Phase 4 — Verify
 - [x] Task 6 — run ruff lint to verify no Python breakage (18 errors: all pre-existing, 0 new from CodeAgent)
+
+## Feature: Skill-Extensible CodeAgent Tools — 2026-04-18
+
+### Requirements
+
+Skills can have a `tools/` folder containing Python modules that export a `TOOLS` dict.
+These tools are automatically discovered and injected into the CodeAgent's execution
+namespace at runtime, enabling any skill to extend the CodeAgent with new capabilities.
+
+### Phases
+
+#### Phase 1 — Core Infrastructure
+- [x] Task 1 — add `discover_skill_tools()` to `erebus/skills/loader.py`
+- [x] Task 2 — update `_BOOTSTRAP_TEMPLATE` in `code_agent.py` to load skill tools via importlib
+- [x] Task 3 — update `CodeAgentTools.__init__` to accept `skill_tool_paths` parameter
+- [x] Task 4 — update `create_agent()` in `core/agent.py` to discover and pass skill tools
+
+#### Phase 2 — Example Skills with Tools
+- [x] Task 5 — obsidian-local skill: tools/obsidian_tools.py (6 functions)
+- [x] Task 6 — duckdb-analytics skill: tools/duckdb_tools.py (8 functions)
+- [x] Task 7 — osint-recon skill: tools/osint_tools.py (8 functions)
+- [x] Task 8 — frida-analyzer skill: tools/frida_tools.py (7 functions)
+- [x] Task 9 — pentest skill: tools/pentest_tools.py (7 functions)
+- [x] Task 10 — supabase skill: tools/supabase_tools.py (9 functions)
+
+#### Phase 3 — Documentation
+- [x] Task 11 — create SKILL_TOOLS_100_IDEAS.md with 100 real-world tooling ideas
+- [x] Task 12 — update code-agent SKILL.md with skill tools documentation
+
+#### Phase 4 — Verify
+- [x] Task 13 — run ruff lint to verify no Python breakage

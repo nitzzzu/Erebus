@@ -56,6 +56,25 @@ Use `run_code_agent` when the task requires **chaining multiple operations**:
 - `Path`, `re`, `json`, `os`, `glob`, `textwrap`, `shlex`
 - Full Python stdlib via normal `import` statements
 
+### Skill-Provided Tools (dynamically loaded)
+
+Skills can extend the CodeAgent by shipping a `tools/` directory with Python
+modules.  These tools are **automatically discovered** and injected into the
+CodeAgent namespace — no configuration needed.
+
+**Currently available skill tools:**
+
+- **Obsidian** — `obsidian_search`, `obsidian_read`, `obsidian_write`, `obsidian_append`, `obsidian_list`, `obsidian_delete`
+- **DuckDB** — `duckdb_query`, `duckdb_sql`, `duckdb_load_csv`, `duckdb_load_parquet`, `duckdb_load_json`, `duckdb_tables`, `duckdb_describe`, `duckdb_export_csv`
+- **OSINT** — `osint_whois`, `osint_dns`, `osint_headers`, `osint_email_validate`, `osint_subdomain_enum`, `osint_ip_info`, `osint_social_check`, `osint_dorking`
+- **Frida** — `frida_devices`, `frida_apps`, `frida_spawn`, `frida_attach`, `frida_unpin_ssl`, `frida_trace`, `frida_run_script`
+- **Pentest** — `pentest_portscan`, `pentest_service_enum`, `pentest_web_headers`, `pentest_ssl_check`, `pentest_dir_brute`, `pentest_whatweb`, `pentest_vuln_scan`
+- **Supabase** — `supa_query`, `supa_insert`, `supa_update`, `supa_delete`, `supa_rpc`, `supa_sql`, `supa_storage_list`, `supa_storage_upload`, `supa_storage_download`
+
+To add your own skill tools, create a `tools/` directory in your skill folder
+with a Python file that exports a `TOOLS` dict.  See `SKILL_TOOLS_100_IDEAS.md`
+for 100 real-world ideas.
+
 ## Patterns
 
 ### Chain Search → Read → Process
@@ -100,6 +119,41 @@ print(f"Stored {len(state['todos'])} chars of TODOs")
 # Call 2: Process stored data
 todos = state.get("todos", "")
 print(f"Processing {len(todos)} chars of stored TODOs")
+```
+
+### Skill Tools — Obsidian + DuckDB Chain
+```python
+# Search Obsidian notes, load into DuckDB, analyse
+notes = obsidian_list("Projects/")
+for note_path in notes[:5]:
+    content = obsidian_read(note_path)
+    print(f"{note_path}: {len(content)} chars")
+
+# Load a CSV and run SQL analytics
+duckdb_load_csv("data/sales.csv", "sales")
+result = duckdb_sql("""
+    SELECT region, SUM(amount) total
+    FROM sales GROUP BY region ORDER BY total DESC
+""")
+print(result)
+```
+
+### Skill Tools — OSINT Recon Chain
+```python
+# Full domain recon
+domain = "target.com"
+print("=== DNS ===")
+print(osint_dns(domain, "A"))
+print(osint_dns(domain, "MX"))
+print("=== Subdomains ===")
+subs = osint_subdomain_enum(domain)
+print(f"Found {len(subs)} subdomains")
+for s in subs[:10]:
+    print(f"  {s}")
+print("=== Security Headers ===")
+headers = pentest_web_headers(f"https://{domain}")
+for h, v in headers.items():
+    print(f"  {h}: {v}")
 ```
 
 ## Guidelines
