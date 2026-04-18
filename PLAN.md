@@ -125,3 +125,52 @@ No existing test suite to run.
 #### Phase 3 — Skill + Verify
 - [x] Task 5 — create token-efficiency skill — affects: erebus/skills/builtins/ai-tooling/token-efficiency/SKILL.md
 - [x] Task 6 — run ruff lint to verify no Python breakage (18 errors: 12 pre-existing + 6 new E501 in embedded JS strings inside usage_report, no logic errors)
+
+## Feature: CodeAgent — smolagents-inspired Code Execution Agent — 2026-04-18
+
+### Requirements
+
+Implement a CodeAgent tool inspired by HuggingFace's smolagents CodeAgent concept.
+Instead of defining separate Agno tools for read file, write file, web search, bash
+run, etc., the CodeAgent generates and executes Python code that chains all these
+operations together in a single execution pass — acting as an ultra-powerful REPL
+with access to both code execution and bash/shell commands.
+
+Key design decisions:
+1. **Single Agno tool** — `run_code_agent` is one tool the LLM calls with a Python
+   code snippet. Inside that snippet, all Erebus capabilities are available as
+   plain function calls.
+2. **No AST sandbox** — unlike smolagents' LocalPythonExecutor, we use a real Python
+   subprocess for full compatibility. Security is handled by being a local agent
+   (same trust model as existing `run_shell` / `run_python`).
+3. **Built-in functions** — the code snippet has access to: `bash()`, `python()`,
+   `read_file()`, `write_file()`, `edit_file()`, `find_files()`, `search_files()`,
+   `search_web()`, `fetch_url()`, `http_get()`, `http_post()`, plus the full
+   Python stdlib.
+4. **State persistence** — a shared `state` dict persists across calls within the
+   same session, enabling multi-step workflows.
+5. **Output capture** — both print output and the final expression value are captured
+   and returned to the agent.
+
+### Tech Stack / Dependencies
+No new dependencies. Uses subprocess + Python stdlib only.
+
+### Testing Strategy
+Manual functional verification + `ruff check erebus/` for Python correctness.
+Match existing test strategy (no automated test suite exists).
+
+### Phases
+
+#### Phase 1 — Core CodeAgent Implementation
+- [x] Task 1 — create `erebus/tools/code_agent.py` with `CodeAgentTools` toolkit containing `run_code_agent` method — affects: erebus/tools/code_agent.py (CodeAgentTools)
+- [x] Task 2 — implement built-in functions module `erebus/tools/_code_agent_builtins.py` with all helper functions — affects: erebus/tools/_code_agent_builtins.py
+
+#### Phase 2 — Integration
+- [x] Task 3 — register CodeAgentTools in agent factory — affects: erebus/core/agent.py (create_agent), erebus/tools/__init__.py
+
+#### Phase 3 — Documentation
+- [ ] Task 4 — create CODE_AGENT_USE_CASES.md with 50 real-world scenarios — affects: CODE_AGENT_USE_CASES.md
+- [ ] Task 5 — create code-agent skill SKILL.md — affects: erebus/skills/builtins/software-development/code-agent/SKILL.md
+
+#### Phase 4 — Verify
+- [ ] Task 6 — run ruff lint to verify no Python breakage

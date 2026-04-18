@@ -1,6 +1,7 @@
 """Extra built-in tools for the Erebus agent."""
 
 from erebus.tools.ask_user import AskUserTools
+from erebus.tools.code_agent import CodeAgentTools
 from erebus.tools.file_edit import FileEditTools
 from erebus.tools.glob_tool import GlobTools
 from erebus.tools.grep_tool import GrepTools
@@ -14,6 +15,7 @@ from erebus.tools.workspace import WorkspaceTools
 
 __all__ = [
     "AskUserTools",
+    "CodeAgentTools",
     "FileEditTools",
     "GlobTools",
     "GrepTools",

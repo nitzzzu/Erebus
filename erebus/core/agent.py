@@ -32,6 +32,7 @@ from erebus.skills.loader import build_skills_from_dirs
 from erebus.skills.registry import get_all_skill_tools
 from erebus.soul.loader import load_soul_instructions
 from erebus.tools.ask_user import AskUserTools
+from erebus.tools.code_agent import CodeAgentTools
 from erebus.tools.file_edit import FileEditTools
 from erebus.tools.glob_tool import GlobTools
 from erebus.tools.grep_tool import GrepTools
@@ -249,6 +250,10 @@ def create_agent(
         WebFetchTools(api_url=settings.agentic_fetch_url),
         FileEditTools(workspace_path=effective_workspace),
         REPLTools(workspace_path=effective_workspace),
+        CodeAgentTools(
+            workspace_path=effective_workspace,
+            agentic_fetch_url=settings.agentic_fetch_url,
+        ),
         AskUserTools(stream_id=stream_id),
     ]
 
