@@ -169,8 +169,8 @@ Match existing test strategy (no automated test suite exists).
 - [x] Task 3 — register CodeAgentTools in agent factory — affects: erebus/core/agent.py (create_agent), erebus/tools/__init__.py
 
 #### Phase 3 — Documentation
-- [ ] Task 4 — create CODE_AGENT_USE_CASES.md with 50 real-world scenarios — affects: CODE_AGENT_USE_CASES.md
-- [ ] Task 5 — create code-agent skill SKILL.md — affects: erebus/skills/builtins/software-development/code-agent/SKILL.md
+- [x] Task 4 — create CODE_AGENT_USE_CASES.md with 50 real-world scenarios — affects: CODE_AGENT_USE_CASES.md
+- [x] Task 5 — create code-agent skill SKILL.md — affects: erebus/skills/builtins/software-development/code-agent/SKILL.md
 
 #### Phase 4 — Verify
-- [ ] Task 6 — run ruff lint to verify no Python breakage
+- [x] Task 6 — run ruff lint to verify no Python breakage (18 errors: all pre-existing, 0 new from CodeAgent)
