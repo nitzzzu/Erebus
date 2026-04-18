@@ -283,6 +283,7 @@ class CodeAgentTools(Toolkit):
                 try:
                     envelope = json.loads(line[len(marker):])
                 except (json.JSONDecodeError, ValueError):
+                    # Malformed envelope — treat as regular user output
                     output_lines.append(line)
             else:
                 output_lines.append(line)
