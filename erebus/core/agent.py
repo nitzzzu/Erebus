@@ -28,10 +28,11 @@ from agno.tools.shell import ShellTools
 
 from erebus.agent_config import get_config_section, load_agent_config
 from erebus.config import ErebusSettings, get_settings
-from erebus.skills.loader import build_skills_from_dirs
+from erebus.skills.loader import build_skills_from_dirs, discover_skill_tools
 from erebus.skills.registry import get_all_skill_tools
 from erebus.soul.loader import load_soul_instructions
 from erebus.tools.ask_user import AskUserTools
+from erebus.tools.code_agent import CodeAgentTools
 from erebus.tools.file_edit import FileEditTools
 from erebus.tools.glob_tool import GlobTools
 from erebus.tools.grep_tool import GrepTools
@@ -138,8 +139,8 @@ def _load_context_files() -> str:
     return "\n\n".join(parts)
 
 
-def _build_skills(settings: ErebusSettings) -> "Skills":
-    """Build the Agno Skills object from built-in, user, and external skill directories."""
+def _collect_skill_dirs(settings: ErebusSettings) -> list[Path]:
+    """Collect all skill root directories from built-in, user, and external sources."""
     skill_dirs: list[Path] = []
 
     # Built-in SKILL.md skills (hermes-style categories)
@@ -179,7 +180,12 @@ def _build_skills(settings: ErebusSettings) -> "Skills":
     except Exception:
         logger.debug("GitHub skills sync skipped (git not available or config missing)")
 
-    return build_skills_from_dirs(*skill_dirs)
+    return skill_dirs
+
+
+def _build_skills(settings: ErebusSettings) -> "Skills":
+    """Build the Agno Skills object from built-in, user, and external skill directories."""
+    return build_skills_from_dirs(*_collect_skill_dirs(settings))
 
 
 def create_agent(
@@ -235,6 +241,11 @@ def create_agent(
         except Exception:
             pass
 
+    # Discover skill-provided tools (tools/*.py inside skill directories)
+    skill_dirs = _collect_skill_dirs(settings)
+    skill_tool_files = discover_skill_tools(*skill_dirs)
+    skill_tool_paths = [str(p) for p in skill_tool_files]
+
     # Core tools (pi-mono style + new capabilities)
     tools: list[Toolkit] = [
         FileTools(base_dir=Path(effective_workspace) if effective_workspace else None),
@@ -249,6 +260,11 @@ def create_agent(
         WebFetchTools(api_url=settings.agentic_fetch_url),
         FileEditTools(workspace_path=effective_workspace),
         REPLTools(workspace_path=effective_workspace),
+        CodeAgentTools(
+            workspace_path=effective_workspace,
+            agentic_fetch_url=settings.agentic_fetch_url,
+            skill_tool_paths=skill_tool_paths,
+        ),
         AskUserTools(stream_id=stream_id),
     ]
 

@@ -201,6 +201,59 @@ def discover_categories(root_dir: Path) -> list[dict[str, str]]:
     return categories
 
 
+def discover_skill_tools(*dirs: Path) -> list[Path]:
+    """Discover ``tools/*.py`` files inside skill directories.
+
+    Skills can extend the CodeAgent by shipping a ``tools/`` sub-directory
+    containing Python modules.  Each ``.py`` file in ``tools/`` must define
+    a top-level ``TOOLS`` dict mapping function-name → callable.  The
+    CodeAgent bootstrap injects these into the execution namespace
+    alongside the built-in helpers.
+
+    Expected layout::
+
+        skills/
+        └── category/
+            └── my-skill/
+                ├── SKILL.md
+                └── tools/
+                    ├── my_helpers.py    # must define TOOLS = {"fn": fn, …}
+                    └── other.py
+
+    Parameters
+    ----------
+    *dirs:
+        One or more root skill directories to scan.
+
+    Returns
+    -------
+    list[Path]
+        Absolute paths to every discovered ``tools/*.py`` file, deduplicated.
+    """
+    seen: set[str] = set()
+    result: list[Path] = []
+
+    for root in dirs:
+        if not root.is_dir():
+            continue
+        for skill_md in sorted(root.rglob("SKILL.md")):
+            if any(part in EXCLUDED_DIRS for part in skill_md.parts):
+                continue
+            tools_dir = skill_md.parent / "tools"
+            if not tools_dir.is_dir():
+                continue
+            for py_file in sorted(tools_dir.glob("*.py")):
+                if py_file.name.startswith("_"):
+                    continue  # skip __init__.py, _private, etc.
+                abs_str = str(py_file.resolve())
+                if abs_str not in seen:
+                    seen.add(abs_str)
+                    result.append(py_file.resolve())
+                    logger.debug("Discovered skill tool: %s", abs_str)
+
+    return result
+
+
 def build_skills_from_dirs(
     *dirs: Path,
     extra_loaders: Optional[list[LocalSkills]] = None,

@@ -125,3 +125,83 @@ No existing test suite to run.
 #### Phase 3 — Skill + Verify
 - [x] Task 5 — create token-efficiency skill — affects: erebus/skills/builtins/ai-tooling/token-efficiency/SKILL.md
 - [x] Task 6 — run ruff lint to verify no Python breakage (18 errors: 12 pre-existing + 6 new E501 in embedded JS strings inside usage_report, no logic errors)
+
+## Feature: CodeAgent — smolagents-inspired Code Execution Agent — 2026-04-18
+
+### Requirements
+
+Implement a CodeAgent tool inspired by HuggingFace's smolagents CodeAgent concept.
+Instead of defining separate Agno tools for read file, write file, web search, bash
+run, etc., the CodeAgent generates and executes Python code that chains all these
+operations together in a single execution pass — acting as an ultra-powerful REPL
+with access to both code execution and bash/shell commands.
+
+Key design decisions:
+1. **Single Agno tool** — `run_code_agent` is one tool the LLM calls with a Python
+   code snippet. Inside that snippet, all Erebus capabilities are available as
+   plain function calls.
+2. **No AST sandbox** — unlike smolagents' LocalPythonExecutor, we use a real Python
+   subprocess for full compatibility. Security is handled by being a local agent
+   (same trust model as existing `run_shell` / `run_python`).
+3. **Built-in functions** — the code snippet has access to: `bash()`, `python()`,
+   `read_file()`, `write_file()`, `edit_file()`, `find_files()`, `search_files()`,
+   `search_web()`, `fetch_url()`, `http_get()`, `http_post()`, plus the full
+   Python stdlib.
+4. **State persistence** — a shared `state` dict persists across calls within the
+   same session, enabling multi-step workflows.
+5. **Output capture** — both print output and the final expression value are captured
+   and returned to the agent.
+
+### Tech Stack / Dependencies
+No new dependencies. Uses subprocess + Python stdlib only.
+
+### Testing Strategy
+Manual functional verification + `ruff check erebus/` for Python correctness.
+Match existing test strategy (no automated test suite exists).
+
+### Phases
+
+#### Phase 1 — Core CodeAgent Implementation
+- [x] Task 1 — create `erebus/tools/code_agent.py` with `CodeAgentTools` toolkit containing `run_code_agent` method — affects: erebus/tools/code_agent.py (CodeAgentTools)
+- [x] Task 2 — implement built-in functions module `erebus/tools/_code_agent_builtins.py` with all helper functions — affects: erebus/tools/_code_agent_builtins.py
+
+#### Phase 2 — Integration
+- [x] Task 3 — register CodeAgentTools in agent factory — affects: erebus/core/agent.py (create_agent), erebus/tools/__init__.py
+
+#### Phase 3 — Documentation
+- [x] Task 4 — create CODE_AGENT_USE_CASES.md with 50 real-world scenarios — affects: CODE_AGENT_USE_CASES.md
+- [x] Task 5 — create code-agent skill SKILL.md — affects: erebus/skills/builtins/software-development/code-agent/SKILL.md
+
+#### Phase 4 — Verify
+- [x] Task 6 — run ruff lint to verify no Python breakage (18 errors: all pre-existing, 0 new from CodeAgent)
+
+## Feature: Skill-Extensible CodeAgent Tools — 2026-04-18
+
+### Requirements
+
+Skills can have a `tools/` folder containing Python modules that export a `TOOLS` dict.
+These tools are automatically discovered and injected into the CodeAgent's execution
+namespace at runtime, enabling any skill to extend the CodeAgent with new capabilities.
+
+### Phases
+
+#### Phase 1 — Core Infrastructure
+- [x] Task 1 — add `discover_skill_tools()` to `erebus/skills/loader.py`
+- [x] Task 2 — update `_BOOTSTRAP_TEMPLATE` in `code_agent.py` to load skill tools via importlib
+- [x] Task 3 — update `CodeAgentTools.__init__` to accept `skill_tool_paths` parameter
+- [x] Task 4 — update `create_agent()` in `core/agent.py` to discover and pass skill tools
+
+#### Phase 2 — Example Skills with Tools
+- [x] Task 5 — obsidian-local skill: tools/obsidian_tools.py (6 functions)
+- [x] Task 6 — duckdb-analytics skill: tools/duckdb_tools.py (8 functions)
+- [x] Task 7 — osint-recon skill: tools/osint_tools.py (8 functions)
+- [x] Task 8 — frida-analyzer skill: tools/frida_tools.py (7 functions)
+- [x] Task 9 — pentest skill: tools/pentest_tools.py (7 functions)
+- [x] Task 10 — supabase skill: tools/supabase_tools.py (9 functions)
+
+#### Phase 3 — Documentation
+- [x] Task 11 — create SKILL_TOOLS_100_IDEAS.md with 100 real-world tooling ideas
+- [x] Task 12 — update code-agent SKILL.md with skill tools documentation
+
+#### Phase 4 — Verify
+- [x] Task 13 — run ruff lint to verify no Python breakage
