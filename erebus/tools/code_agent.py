@@ -50,6 +50,7 @@ _MAX_OUTPUT = 50_000
 _BOOTSTRAP_TEMPLATE = """\
 # -- CodeAgent bootstrap --
 import json as _json, sys as _sys, os as _os, traceback as _tb
+import importlib.util as _imputil
 
 # Restore persistent state from temp file
 _state_path = {state_path!r}
@@ -69,6 +70,20 @@ _builtins._WORKSPACE_PATH = {workspace_path!r}
 # Inject all built-in functions into global namespace
 for _name, _obj in _builtins.BUILTINS_CATALOG.items():
     globals()[_name] = _obj
+
+# -- Load skill-provided tools --
+# Each .py file in a skill's tools/ directory exports a TOOLS dict.
+_skill_tool_paths = {skill_tool_paths!r}
+for _stp in _skill_tool_paths:
+    try:
+        _spec = _imputil.spec_from_file_location("_skill_tool", _stp)
+        _mod = _imputil.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        _tools_dict = getattr(_mod, "TOOLS", {{}})
+        for _tname, _tobj in _tools_dict.items():
+            globals()[_tname] = _tobj
+    except Exception as _e:
+        print(f"[warn] Failed to load skill tool {{_stp}}: {{_e}}")
 
 # Make state available
 globals()["state"] = state
@@ -136,6 +151,11 @@ class CodeAgentTools(Toolkit):
 
     **Standard Library** (directly available)
     - ``Path``, ``re``, ``json``, ``os``, ``glob``, ``textwrap``, ``shlex``
+
+    **Skill-provided tools** (dynamically loaded from ``skills/*/tools/*.py``)
+    - Skills can ship a ``tools/`` sub-directory with Python modules that
+      export a ``TOOLS`` dict.  These are automatically discovered and
+      injected into the CodeAgent namespace at runtime.
     """
 
     def __init__(
@@ -143,10 +163,12 @@ class CodeAgentTools(Toolkit):
         timeout: int = _DEFAULT_TIMEOUT,
         workspace_path: Optional[str] = None,
         agentic_fetch_url: Optional[str] = None,
+        skill_tool_paths: Optional[list[str]] = None,
     ) -> None:
         self._timeout = timeout
         self._workspace_path = workspace_path
         self._agentic_fetch_url = agentic_fetch_url
+        self._skill_tool_paths: list[str] = skill_tool_paths or []
         # Persistent state file (one per toolkit instance / session)
         self._state_dir = tempfile.mkdtemp(prefix="erebus_codeagent_")
         self._state_path = os.path.join(self._state_dir, "state.json")
@@ -246,6 +268,7 @@ class CodeAgentTools(Toolkit):
             builtins_dir=builtins_dir,
             agentic_fetch_url=self._agentic_fetch_url or "",
             workspace_path=self._workspace_path or os.getcwd(),
+            skill_tool_paths=self._skill_tool_paths,
             indented_code=indented,
         )
 
